@@ -53,7 +53,7 @@ class robot_height:
 					self.highest_point_.y = position[1]
 					self.highest_point_.z = position[2]
 			except tf.Exception:
-				rospy.logerr('TF has thrown an exception.  Will retry the TF call')
+				rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
 
 		if not prev_high_link == self.highest_link_:
 			rospy.loginfo("Highest link is now: %s at height %f meters above base_link", self.highest_link_, self.highest_point_.z)
