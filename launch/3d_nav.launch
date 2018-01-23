@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <!--- Run the cloud to laserscan node -->
+  <node name="cloud_to_laserscan" pkg="3d_navigation" type="cloud_to_laserscan_with_poly.py" output="screen" /> 
+
+  <!--- Run the robot height node -->
+  <node name="robot_height" pkg="3d_navigation" type="robot_height.py" output="screen" />
+
+  <!--- This initiates the hokuyo lidar 
+  <include file="$(find urg_node)/launch/urg_lidar.launch" /> -->
+</launch>
