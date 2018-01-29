@@ -58,7 +58,7 @@ class robot_height:
 		if not prev_high_link == self.highest_link_:
 			rospy.loginfo("Highest link is now: %s at height %f meters above base_link", self.highest_link_, self.highest_point_.z)
 		elif prev_high_link == self.highest_link_ and not round(prev_high_point,2) == round(self.highest_point_.z,2):
-			rospy.loginfo("%s is still the highest link but has moved up to: %f meters above base link", self.highest_link_, self.highest_point_.z)
+			rospy.loginfo("%s is still the highest link but has moved to: %f meters above base link", self.highest_link_, self.highest_point_.z)
 		else:
 			pass
 		
