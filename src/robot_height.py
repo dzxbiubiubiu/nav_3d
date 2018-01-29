@@ -65,8 +65,8 @@ class robot_height:
 		self.send_msg_ = True
 
 if __name__=='__main__':
-	tf_listener = tf.TransformListener()
 	rospy.init_node('robot_height')
+	tf_listener = tf.TransformListener()
 	try:
 		robot_height = robot_height()
 	except rospy.ROSInterruptException: 

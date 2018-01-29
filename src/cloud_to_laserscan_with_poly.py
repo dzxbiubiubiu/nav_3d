@@ -15,7 +15,7 @@ class cloud_to_laserscan:
 	z value of 0.0 +-floor_range (assumed to be the floor that the robot is driving on)."""
 	
 	# Change these variables to adjust the filter
-	scan_sub_topic_ = "/laser_stitcher/local_dense_cloud"
+	scan_sub_topic_ = "/laser_stitcher/nav_cloud"
 	poly_sub_topic =   "/move_base/local_costmap/footprint" # "test_poly_node/polygon"
 	height_sub_topic = "/robot_height"
 	pub_topic_ = "/scan360"
