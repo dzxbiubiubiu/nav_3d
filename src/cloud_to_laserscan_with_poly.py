@@ -22,7 +22,7 @@ class cloud_to_laserscan:
 	robot_height_default_ = 1.0 # m
 	floor_range_ = 0.10 # m
 	res_ = 5 # decimal points
-	min_obj_range_ = 1.3 # Min obstacle range to be built into the costmap
+	min_obj_range_ = 0.5 # Min obstacle range to be built into the costmap
 	pub_rate_ = 4 # Hz
 	#----------------------------------------------
 

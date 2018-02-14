@@ -6,7 +6,7 @@
   <node name="cloud_to_laserscan" pkg="nav_3d" type="cloud_to_laserscan_with_poly.py" output="screen" /> 
 
   <!--- Run the robot height node -->
-  <node name="robot_height" pkg="nav_3d" type="robot_height.py" output="screen" />
+  <node name="robot_state" pkg="nav_3d" type="robot_state.py" output="screen" />
 
   <!--- This initiates the hokuyo lidar 
   <include file="$(find urg_node)/launch/urg_lidar.launch" /> -->
