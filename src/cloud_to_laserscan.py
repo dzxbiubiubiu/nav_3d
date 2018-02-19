@@ -4,6 +4,7 @@ import rospy
 import math
 import numpy
 import sensor_msgs.point_cloud2 as pc2
+from point_in_poly import point_in_poly
 from sensor_msgs.msg import LaserScan, PointCloud2
 from geometry_msgs.msg import Point32, PointStamped, PolygonStamped
 
@@ -17,8 +18,8 @@ class cloud_to_laserscan:
 	# Change these variables to adjust the filter
 	scan_sub_topic_ = "/laser_stitcher/nav_cloud"
 	poly_sub_topic =   "/move_base/local_costmap/footprint" # "test_poly_node/polygon"
-	height_sub_topic = "/robot_height"
-	pub_topic_ = "/scan360"
+	height_sub_topic = "/nav_3d/robot_height"
+	pub_topic_ = "/nav_3d/scan360"
 	robot_height_default_ = 1.0 # m
 	floor_range_ = 0.10 # m
 	res_ = 5 # decimal points
@@ -94,7 +95,6 @@ class cloud_to_laserscan:
 
 		# This is where the magic happens.  Iterating through each point in the cloud and filtering first for robot height and floor range.  Then saving if not filtered out.
 		for p in pc2.read_points(cloud, field_names = ("x", "y", "z"), skip_nans=True):
-			#rospy.loginfo(" x : %f  y: %f  z: %f" %(p[0],p[1],p[2]))
 			# cloud_point.point.z = p[2]
 			if p[2] < self.current_robot_height.z and not (p[2] > -self.floor_range_ and p[2] < self.floor_range_):
 				if self.poly_init:
@@ -134,51 +134,6 @@ class cloud_to_laserscan:
 		"""Only updates the current_poly to the newly published polygon"""
 		self.current_robot_height = height
 		self.robot_height_init = True
-
-def point_in_poly(polygon, point):
-	"""This is a method of determining if a given point is within a given polygon. 
-	It assumes that the given point and polygon are both stamped instances.
-
-	NOTE: If the point and polygon are in different frames then it wants to transform the point into the same frame.
-	However, if this is being called very often the function transformPoint will slow performance greatly. 
-	In a case like that, it is better to ensure the point and polgyon are in the same frame already."""
-	if not isinstance(polygon, PolygonStamped):
-		rospy.loginfo("A stamped polygon was not passed into point_in_poly")
-
-	if not isinstance(point, PointStamped):
-		rospy.loginfo("A stamped point was not passed into point_in_poly")
-
-	n = len(polygon.polygon.points)
-
-	result = False
-
-	# Transforming the point into the same frame as the polygon if it is necessary
-	if polygon.header.frame_id != point.header.frame_id:
-		point = tf_listener.transformPoint(polygon.header.frame_id, point)
-
-	# Getting rid of stamped portions
-	polygon = polygon.polygon
-	point = point.point
-
-	# Point in polygon algorithm
-	p1x = polygon.points[0].x
-	p1y = polygon.points[0].y
-	for i in range(n):
-		p2x = polygon.points[i].x
-		p2y = polygon.points[i].y
-		# print("p1y : %f p2y : %f" %(p1y,p2y))
-		if point.y > min(p1y,p2y):
-			# print "Y is above min"
-			if point.y <= max(p1y,p2y):
-				# print "Y is below max"
-				if point.x <= max(p1x,p2x):
-					# print "x below max"
-					if p1y != p2y:
-						xinters = (point.y-p1y)*(p2x-p1x)/(p2y-p1y)+p1x
-					if p1x == p2x or point.x <= xinters:
-						result = not result
-		p1x,p1y = p2x,p2y
-	return result
 
 if __name__=='__main__':
 	rospy.init_node('cloud_to_laserscan')

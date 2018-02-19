@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs.msg import Point32, PolygonStamped, Polygon
-# from std_msgs.msg import Float32
-# from tf import TransformListener
+import numpy
 import tf
 from scipy import spatial
+from geometry_msgs.msg import Point32, PolygonStamped, Polygon
+
 
 class robot_state:
 	""" This class is made to calculate the state of a robot including 
@@ -17,8 +17,12 @@ class robot_state:
 	# Adjustable settings
 	pub_rate_ = 1 # hz
 	ref_link_ = '/base_footprint'
-	#----------------------------------------------
+	halo_radius = 0.15 # m
+	halo_density = 100
+	hgt_pup_top = '/nav_3d/robot_height'
+	ftprnt_pub_top = '/nav_3d/robot_footprint'
 
+	#----------------------------------------------
 	highest_point_ = Point32()
 	highest_link_ = 'Not init'
 	robot_footprint_ = PolygonStamped()
@@ -27,15 +31,15 @@ class robot_state:
 	send_msg_ = False
 
 	def __init__(self):
-		pub_height = rospy.Publisher('/robot_height', Point32, queue_size=1)
-		pub_footprint = rospy.Publisher('/robot_footprint', PolygonStamped, queue_size=1)
+		pub_height = rospy.Publisher(self.hgt_pup_top, Point32, queue_size=1)
+		pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
 
 		pub_rate = rospy.Rate(self.pub_rate_)
 		while not rospy.is_shutdown():
 			self.analyze_links()
 			if self.send_msg_:
 				pub_height.publish(self.highest_point_)
-				pub_footprint.publish(self.robot_footprint_)
+				pub_footprint.publish(self.robot_footprint_.polygon)
 			pub_rate.sleep()
 
 	def analyze_links(self):
@@ -48,8 +52,13 @@ class robot_state:
 		links = tf_listener.getFrameStrings()
 
 		link_points = []
+
+		prev_high_link = self.highest_link_
+		prev_high_point = self.highest_point_.z
+		self.highest_point_ = Point32()
+		self.highest_link_ = 'Not init'
+
 		# Check the position of each link and check to find the highest link
-		i = 0
 		for frame in links:
 			try:
 				transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
@@ -65,42 +74,79 @@ class robot_state:
 			except tf.Exception:
 				rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
 		
+		# Converting the list of link points to an array so it's easier to work with
+		link_points = numpy.array(link_points)
+
+		# After all of the frames have been analyzed we now determine the highest link
+		if not prev_high_link == self.highest_link_:
+			rospy.loginfo("Highest link is now: %s at height %f meters above %s", self.highest_link_, self.highest_point_.z, self.ref_link_)
+		elif prev_high_link == self.highest_link_ and not round(prev_high_point,2) == round(self.highest_point_.z,2):
+			rospy.loginfo("%s is still the highest link but has moved to: %f meters above %s", self.highest_link_, self.highest_point_.z, self.ref_link_)
+		else:
+			pass
+
 		self.robot_footprint_.polygon = self.find_footprint(link_points)
 		self.robot_footprint_.header.stamp = rospy.Time.now()
 		self.send_msg_ = True
 
 
-	def check_height(self, position, frame):
-		prev_high_link = self.highest_link_
-		prev_high_point = self.highest_point_.z
-		
+	def check_height(self, position, frame):		
 		if position[2] > self.highest_point_.z:
 			self.highest_link_ = frame
 			self.highest_point_.x = position[0]
 			self.highest_point_.y = position[1]
 			self.highest_point_.z = position[2]
 
-		if not prev_high_link == self.highest_link_:
-			rospy.loginfo("Highest link is now: %s at height %f meters above base_link", self.highest_link_, self.highest_point_.z)
-		elif prev_high_link == self.highest_link_ and not round(prev_high_point,2) == round(self.highest_point_.z,2):
-			rospy.loginfo("%s is still the highest link but has moved to: %f meters above base link", self.highest_link_, self.highest_point_.z)
-		else:
-			pass
-		
 	def find_footprint(self, points):
+		"""This function will take in an numpy.array of points in 2D and create
+		a convex polygon that encapsilates every point provided.\
+		Arguments to pass in:
+		points = 2D array of points numpy.array([:,:])
+		Returns a Polygon"""
 		footprint = Polygon()
 
-		if not points:
+		if self.halo_density:
+			buffed_points = self.halo_buffer(points, self.halo_radius, self.halo_density)
+		else:
+			buffed_points = points
+
+		if not points.size:
 			pass
 		else:
-			hull = spatial.ConvexHull(points[:][:])
+			hull = spatial.ConvexHull(buffed_points)
 			for vertex in hull.vertices:
 				point = Point32()
-				point.x = points[vertex][0]
-				point.y = points[vertex][1]
+				point.x = buffed_points[vertex, 0]
+				point.y = buffed_points[vertex, 1]
 				point.z = 0.0
 				footprint.points.append(point)
 		return footprint
+
+	def halo_buffer(self, points, radius, density):
+		"""This function is designed to take in a 2D array points and 
+		create add a radius of new points with the center of each of the
+		original points.  This is useful when dealing with the footprint
+		of a robot to create a better and safer robot footprint.
+		Arguments to pass in:
+		points = 2D array of points numpy.array([:,:])
+		radius = buffer distance from the center of each point
+		density = number of points to form the circle around each point
+		Returns an 2D array of points"""
+		new_points = list()
+		theta_increment = 2 * 3.1416 / density
+
+		for point in points:
+			current_theta = 0
+			for i in list(range(0, density)):
+				x_new = point[0] + radius * numpy.cos(current_theta + theta_increment)
+				y_new = point[1] + radius * numpy.sin(current_theta + theta_increment)
+				new_points.append([x_new, y_new])
+
+				current_theta += theta_increment
+
+		new_points = numpy.array(new_points)
+		return new_points
+
 
 if __name__=='__main__':
 	rospy.init_node('robot_state')
