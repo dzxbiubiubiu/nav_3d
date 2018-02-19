@@ -60,19 +60,23 @@ class robot_state:
 
 		# Check the position of each link and check to find the highest link
 		for frame in links:
-			try:
-				transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
-
-				# The position array is the first section of the tuple transform[0] = [x,y,z]
-				position = transform[0]
-				self.check_height(position, frame)
-
-				# Building the XY list of each link to send to find_footprint
-				position.pop()
-				link_points.append(position)
-
-			except tf.Exception:
-				rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
+			# Need to throw out any stationary frames relative to map. 'odom' and 'map' apply for the vaultbot.
+			if frame == 'map' or frame == 'odom':
+				pass
+			else:
+				try:
+					transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
+	
+					# The position array is the first section of the tuple transform[0] = [x,y,z]
+					position = transform[0]
+					self.check_height(position, frame)
+	
+					# Building the XY list of each link to send to find_footprint
+					position.pop()
+					link_points.append(position)
+	
+				except tf.Exception:
+					rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
 		
 		# Converting the list of link points to an array so it's easier to work with
 		link_points = numpy.array(link_points)
