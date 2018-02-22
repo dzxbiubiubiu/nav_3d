@@ -152,7 +152,7 @@ class robot_state:
 
 
 if __name__=='__main__':
-	rospy.init_node('robot_state')
+	rospy.init_node('nav_3d/robot_state')
 	tf_listener = tf.TransformListener()
 	try:
 		robot_state = robot_state()
