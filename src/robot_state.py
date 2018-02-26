@@ -16,11 +16,12 @@ class robot_state:
 
 	# Adjustable settings
 	pub_rate_ = 1 # hz
-	ref_link_ = '/base_footprint'
-	halo_radius = 0.15 # m
-	halo_density = 100
-	hgt_pup_top = '/nav_3d/robot_height'
-	ftprnt_pub_top = '/nav_3d/robot_footprint'
+	ref_link_ = '/base_footprint' # the reference frame which will be considered as the origin of the robot on the ground
+	halo_radius_ = 0.2 # m
+	halo_density_ = 10 # no. of points in the halo buffer
+	hgt_pup_top_ = '/nav_3d/robot_height' # topic name to publish the robot height
+	ftprnt_pub_top_ = '/nav_3d/robot_footprint' # topic name to publish the robot footprint
+	frames_to_ignore_ = ['map', 'odom', 'left_ur5_tool0_controller'] # This is a list of frames in the TF tree that you want to leave out of the robot footprint. NOTE: no leading slash here
 
 	#----------------------------------------------
 	highest_point_ = Point32()
@@ -31,8 +32,8 @@ class robot_state:
 	send_msg_ = False
 
 	def __init__(self):
-		pub_height = rospy.Publisher(self.hgt_pup_top, Point32, queue_size=1)
-		pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
+		pub_height = rospy.Publisher(self.hgt_pup_top_, Point32, queue_size=1)
+		pub_footprint = rospy.Publisher(self.ftprnt_pub_top_, Polygon, queue_size=1)
 
 		pub_rate = rospy.Rate(self.pub_rate_)
 		while not rospy.is_shutdown():
@@ -58,21 +59,23 @@ class robot_state:
 		self.highest_point_ = Point32()
 		self.highest_link_ = 'Not init'
 
-		# Check the position of each link and check to find the highest link
+		# Check the position of each link for the polygon footprint and check the height of each
 		for frame in links:
-			try:
-				transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
-
-				# The position array is the first section of the tuple transform[0] = [x,y,z]
-				position = transform[0]
-				self.check_height(position, frame)
-
-				# Building the XY list of each link to send to find_footprint
-				position.pop()
-				link_points.append(position)
-
-			except tf.Exception:
-				rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
+			# Need to build build in frames not designated in the frames_to_ignore 
+			if not frame in self.frames_to_ignore_:
+				try:
+					transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
+	
+					# The position array is the first section of the tuple transform[0] = [x,y,z]
+					position = transform[0]
+					self.check_height(position, frame)
+	
+					# Building the XY list of each link to send to find_footprint
+					position.pop()
+					link_points.append(position)
+	
+				except tf.Exception:
+					rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
 		
 		# Converting the list of link points to an array so it's easier to work with
 		link_points = numpy.array(link_points)
@@ -105,8 +108,8 @@ class robot_state:
 		Returns a Polygon"""
 		footprint = Polygon()
 
-		if self.halo_density:
-			buffed_points = self.halo_buffer(points, self.halo_radius, self.halo_density)
+		if self.halo_density_:
+			buffed_points = self.halo_buffer(points, self.halo_radius_, self.halo_density_)
 		else:
 			buffed_points = points
 
@@ -149,7 +152,7 @@ class robot_state:
 
 
 if __name__=='__main__':
-	rospy.init_node('robot_state')
+	rospy.init_node('nav_3d/robot_state')
 	tf_listener = tf.TransformListener()
 	try:
 		robot_state = robot_state()
