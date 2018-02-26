@@ -1,4 +1,18 @@
 #!/usr/bin/env python
+__author__ = "Chris Suarez"
+__copyright__ = "Copyright 2018, The University of Texas at Austin, " \
+                "Nuclear Robotics Group"
+__credits__ = "Chris Suarez"
+__license__ = "BSD"
+__version__ = "0.0.8"
+__maintainer__ = "Chris Suarez"
+__email__ = "chriswsuarez@utexas.edu"
+__status__ = "Production"
+__doc__ = """This node is made to calculate the state of a robot including 
+	height of a robot from base_link to the highest measured link and the
+	footprint of a robot displayed as a polygon. 
+	It publishes the x,y,z coordinates of only the highest robot point
+	and a polygon for the footprint given all the links"""
 
 import rospy
 import numpy
@@ -7,7 +21,7 @@ from scipy import spatial
 from geometry_msgs.msg import Point32, PolygonStamped, Polygon
 
 
-class robot_state:
+class RobotState:
 	""" This class is made to calculate the state of a robot including 
 	height of a robot from base_link to the highest measured link and the
 	footprint of a robot displayed as a polygon. 
@@ -15,56 +29,57 @@ class robot_state:
 	and a polygon for the footprint given all the links."""
 
 	# Adjustable settings
-	pub_rate_ = 1 # hz
-	ref_link_ = '/base_footprint' # the reference frame which will be considered as the origin of the robot on the ground
-	halo_radius_ = 0.2 # m
-	halo_density_ = 10 # no. of points in the halo buffer
-	hgt_pup_top_ = '/nav_3d/robot_height' # topic name to publish the robot height
-	ftprnt_pub_top_ = '/nav_3d/robot_footprint' # topic name to publish the robot footprint
-	frames_to_ignore_ = ['map', 'odom', 'left_ur5_tool0_controller'] # This is a list of frames in the TF tree that you want to leave out of the robot footprint. NOTE: no leading slash here
+	pub_rate = 1 # hz
+	ref_link = '/base_footprint' # the reference frame which will be considered as the origin of the robot on the ground
+	halo_radius = 0.2 # m
+	halo_density = 10 # no. of points in the halo buffer
+	hgt_pub_top = '/nav_3d/robot_height' # topic name to publish the robot height
+	ftprnt_pub_top = '/nav_3d/robot_footprint' # topic name to publish the robot footprint
+	frames_to_ignore = ['map', 'odom', 'left_ur5_tool0_controller'] # This is a list of frames in the TF tree that you want to leave out of the robot footprint. NOTE: no leading slash here
 
 	#----------------------------------------------
-	highest_point_ = Point32()
-	highest_link_ = 'Not init'
-	robot_footprint_ = PolygonStamped()
-	robot_footprint_.header.frame_id = ref_link_
+	# Protected Class Variables
+	_highest_point = Point32()
+	_highest_link = 'Not init'
+	_robot_footprint = PolygonStamped()
+	_robot_footprint.header.frame_id = ref_link
 
-	send_msg_ = False
+	_send_msg = False
 
 	def __init__(self):
-		pub_height = rospy.Publisher(self.hgt_pup_top_, Point32, queue_size=1)
-		pub_footprint = rospy.Publisher(self.ftprnt_pub_top_, Polygon, queue_size=1)
+		pub_height = rospy.Publisher(self.hgt_pub_top, Point32, queue_size=1)
+		pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
 
-		pub_rate = rospy.Rate(self.pub_rate_)
+		pub_rate = rospy.Rate(self.pub_rate)
 		while not rospy.is_shutdown():
 			self.analyze_links()
-			if self.send_msg_:
-				pub_height.publish(self.highest_point_)
-				pub_footprint.publish(self.robot_footprint_.polygon)
+			if self._send_msg:
+				pub_height.publish(self._highest_point)
+				pub_footprint.publish(self._robot_footprint.polygon)
 			pub_rate.sleep()
 
 	def analyze_links(self):
 		"""This function just iterates through every link in the robot and
 		saves their XYZ positions for use by the find_height and footprint
 		functions.  It bases the XYZ position using the reference link as
-		the origin.  The reference link can be changed ref_link_ class variable."""
+		the origin.  The reference link can be changed ref_link class variable."""
 
 		# Get all the names for each link in the system
 		links = tf_listener.getFrameStrings()
 
 		link_points = []
 
-		prev_high_link = self.highest_link_
-		prev_high_point = self.highest_point_.z
-		self.highest_point_ = Point32()
-		self.highest_link_ = 'Not init'
+		prev_high_link = self._highest_link
+		prev_high_point = self._highest_point.z
+		self._highest_point = Point32()
+		self._highest_link = 'Not init'
 
 		# Check the position of each link for the polygon footprint and check the height of each
 		for frame in links:
 			# Need to build build in frames not designated in the frames_to_ignore 
-			if not frame in self.frames_to_ignore_:
+			if not frame in self.frames_to_ignore:
 				try:
-					transform = tf_listener.lookupTransform(self.ref_link_, frame, rospy.Time())
+					transform = tf_listener.lookupTransform(self.ref_link, frame, rospy.Time())
 	
 					# The position array is the first section of the tuple transform[0] = [x,y,z]
 					position = transform[0]
@@ -81,24 +96,24 @@ class robot_state:
 		link_points = numpy.array(link_points)
 
 		# After all of the frames have been analyzed we now determine the highest link
-		if not prev_high_link == self.highest_link_:
-			rospy.loginfo("Highest link is now: %s at height %f meters above %s", self.highest_link_, self.highest_point_.z, self.ref_link_)
-		elif prev_high_link == self.highest_link_ and not round(prev_high_point,2) == round(self.highest_point_.z,2):
-			rospy.loginfo("%s is still the highest link but has moved to: %f meters above %s", self.highest_link_, self.highest_point_.z, self.ref_link_)
+		if not prev_high_link == self._highest_link:
+			rospy.loginfo("Highest link is now: %s at height %f meters above %s", self._highest_link, self._highest_point.z, self.ref_link)
+		elif prev_high_link == self._highest_link and not round(prev_high_point,2) == round(self._highest_point.z,2):
+			rospy.loginfo("%s is still the highest link but has moved to: %f meters above %s", self._highest_link, self._highest_point.z, self.ref_link)
 		else:
 			pass
 
-		self.robot_footprint_.polygon = self.find_footprint(link_points)
-		self.robot_footprint_.header.stamp = rospy.Time.now()
-		self.send_msg_ = True
+		self._robot_footprint.polygon = self.find_footprint(link_points)
+		self._robot_footprint.header.stamp = rospy.Time.now()
+		self._send_msg = True
 
 
 	def check_height(self, position, frame):		
-		if position[2] > self.highest_point_.z:
-			self.highest_link_ = frame
-			self.highest_point_.x = position[0]
-			self.highest_point_.y = position[1]
-			self.highest_point_.z = position[2]
+		if position[2] > self._highest_point.z:
+			self._highest_link = frame
+			self._highest_point.x = position[0]
+			self._highest_point.y = position[1]
+			self._highest_point.z = position[2]
 
 	def find_footprint(self, points):
 		"""This function will take in an numpy.array of points in 2D and create
@@ -108,8 +123,8 @@ class robot_state:
 		Returns a Polygon"""
 		footprint = Polygon()
 
-		if self.halo_density_:
-			buffed_points = self.halo_buffer(points, self.halo_radius_, self.halo_density_)
+		if self.halo_density:
+			buffed_points = self.halo_buffer(points, self.halo_radius, self.halo_density)
 		else:
 			buffed_points = points
 
@@ -155,6 +170,6 @@ if __name__=='__main__':
 	rospy.init_node('nav_3d/robot_state')
 	tf_listener = tf.TransformListener()
 	try:
-		robot_state = robot_state()
+		_RobotState = RobotState()
 	except rospy.ROSInterruptException: 
 		pass
