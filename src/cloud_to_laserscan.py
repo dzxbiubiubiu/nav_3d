@@ -149,7 +149,7 @@ class CloudToLaserscan:
 		self._robot_height_init = True
 
 if __name__=='__main__':
-	rospy.init_node('nav_3d/cloud_to_laserscan')
+	rospy.init_node('cloud_to_laserscan')
 	try:
 		_CloudToLaserscan = CloudToLaserscan()
 	except rospy.ROSInterruptException: 

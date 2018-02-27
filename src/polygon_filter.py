@@ -95,7 +95,7 @@ class PolygonFilter:
 
 if __name__=='__main__':
 	tf_listener = TransformListener()
-	rospy.init_node('nav_3d/polygon_filter')
+	rospy.init_node('polygon_filter')
 	try:
 		_PolygonFilter = PolygonFilter()
 	except rospy.ROSInterruptException: 

@@ -56,6 +56,7 @@ class RobotState:
 			if self._send_msg:
 				pub_height.publish(self._highest_point)
 				pub_footprint.publish(self._robot_footprint.polygon)
+				self._send_msg = False
 			pub_rate.sleep()
 
 	def analyze_links(self):
@@ -167,7 +168,7 @@ class RobotState:
 
 
 if __name__=='__main__':
-	rospy.init_node('nav_3d/robot_state')
+	rospy.init_node('robot_state')
 	tf_listener = tf.TransformListener()
 	try:
 		_RobotState = RobotState()
