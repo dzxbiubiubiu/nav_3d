@@ -4,7 +4,7 @@ __copyright__ = "Copyright 2018, The University of Texas at Austin, " \
                 "Nuclear Robotics Group"
 __credits__ = "Chris Suarez"
 __license__ = "BSD"
-__version__ = "0.0.8"
+__version__ = "0.0.1"
 __maintainer__ = "Chris Suarez"
 __email__ = "chriswsuarez@utexas.edu"
 __status__ = "Production"
@@ -16,6 +16,7 @@ __doc__ = """This subcribes to some point cloud topic and then transforms it int
 import rospy
 import math
 import numpy
+import tf
 import sensor_msgs.point_cloud2 as pc2
 from point_in_poly import point_in_poly
 from sensor_msgs.msg import LaserScan, PointCloud2
@@ -32,12 +33,12 @@ class CloudToLaserscan:
 	scan_sub_topic = "/laser_stitcher/nav_cloud"
 	poly_sub_topic =   "/move_base/local_costmap/footprint" # "test_poly_node/polygon"
 	height_sub_topic = "/nav_3d/robot_height"
-	pub_topic = "/nav_3d/scan360"
+	pub_topic = "~scan360"
 	robot_height_default = 1.0 # m
 	floor_range = 0.10 # m
 	res = 5 # decimal points
 	min_obj_range = 0.5 # Min obstacle range to be built into the costmap
-	pub_rate = 4 # Hz
+	pub_rate = 1 # Hz
 	
 	#----------------------------------------------
 	# Protected class varaibles
@@ -53,19 +54,13 @@ class CloudToLaserscan:
 	_robot_height_init = False
 
 	def __init__(self):
-		self._send_msg = False
-
+		self.pub = rospy.Publisher(self.pub_topic, LaserScan, queue_size=1)
+		self.tf_listener = tf.TransformListener()
 		rospy.Subscriber(self.scan_sub_topic, PointCloud2, self.scan_builder)
 		rospy.Subscriber(self.poly_sub_topic, PolygonStamped, self.update_poly)
 		rospy.Subscriber(self.height_sub_topic, Point32, self.update_height)
-		pub = rospy.Publisher(self.pub_topic, LaserScan, queue_size=1)
 
-		p_rate = rospy.Rate(self.pub_rate)
-		while not rospy.is_shutdown():
-			if self._send_msg:
-				pub.publish(self._scan_to_publish)
-				self._send_msg = False
-			p_rate.sleep()
+
 
 	def scan_builder(self, cloud):
 		start_time = rospy.get_time()
@@ -92,13 +87,13 @@ class CloudToLaserscan:
 		# If the polygon and the points being read are in different frames we'll transform the polygon
 		if self._current_poly.header.frame_id != cloud.header.frame_id:
 			# rospy.loginfo("Tranforming the polygon")
-			# tf_listener.waitForTransform(point.header.frame_id, polygon.header.frame_id, rospy.Time(), rospy.Duration(0.10))
+			# self.tf_listener.waitForTransform(point.header.frame_id, polygon.header.frame_id, rospy.Time(), rospy.Duration(0.10))
 			i = 0
 			temp_poly_point = PointStamped()
 			for v in self._current_poly.polygon.points:
 				temp_poly_point.header = self._current_poly.header
 				temp_poly_point.point = v # self._current_poly.polygon.points[i]
-				temp_poly_point = tf_listener.transformPoint(cloud.header.frame_id, temp_poly_point)
+				temp_poly_point = self.tf_listener.transformPoint(cloud.header.frame_id, temp_poly_point)
 				self._current_poly.polygon.points[i] = temp_poly_point.point
 				i = i + 1
 			self._current_poly.header.frame_id = cloud.header.frame_id
@@ -133,10 +128,13 @@ class CloudToLaserscan:
 		# If it is less than x% of the last scan than we will assume it is not a new full scan and not publish
 		# if (len(self._scan_from_cloud.ranges) - self._scan_from_cloud.ranges.count(numpy.inf)) >= 0.25 * (len(self._scan_to_publish.ranges) - self._scan_to_publish.ranges.count(numpy.inf)):
 		self._scan_to_publish = self._scan_from_cloud
-		self._send_msg = True
+		self.pub.publish(self._scan_to_publish)
 
 		# self.prev_cloud_ = cloud
 		rospy.loginfo("Made it through the cloud in %f seconds", rospy.get_time() - start_time)
+
+		p_rate = rospy.Rate(self.pub_rate)
+		p_rate.sleep()
 
 	def update_poly(self, poly_stamped):
 		"""Only updates the _current_poly to the newly published polygon"""
@@ -150,7 +148,14 @@ class CloudToLaserscan:
 
 if __name__=='__main__':
 	rospy.init_node('cloud_to_laserscan')
+
 	try:
 		_CloudToLaserscan = CloudToLaserscan()
+
+		p_rate = rospy.Rate(_CloudToLaserscan.pub_rate)
+		# This is the ros spinner
+		while not rospy.is_shutdown():
+			p_rate.sleep()
+
 	except rospy.ROSInterruptException: 
 		pass

@@ -45,21 +45,11 @@ class MapMaintainer:
 
 		# Get all the names for each link in the system
 
-		try:
-			transform = tf_listener.lookupTransform(self.ref_link, frame, rospy.Time())
-			# The position array is the first section of the tuple transform[0] = [x,y,z]
-			position = transform[0]
-			self.check_height(position, frame)
-			# Building the XY list of each link to send to find_footprint
-			position.pop()
-		except tf.Exception:
-			rospy.logerr_throttle(5, 'TF has thrown an exception.  Will retry the TF call')
-
 		self._send_msg = True
 
 
 if __name__=='__main__':
-	rospy.init_node('nav_3d/map_maintainer')
+	rospy.init_node('map_maintainer')
 	tf_listener = tf.TransformListener()
 	try:
 		_MapMaintainer = MapMaintainer()
