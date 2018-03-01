@@ -176,5 +176,3 @@ if __name__=='__main__':
 			p_rate.sleep()
 	except rospy.ROSInterruptException: 
 		pass
-
-	rospy.spin()
