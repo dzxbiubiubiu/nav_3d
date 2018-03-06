@@ -13,7 +13,7 @@
   <!--- This initiates the hokuyo lidar 
   <include file="$(find urg_node)/launch/urg_lidar.launch" /> -->
 
-  <!-- Launch the imu transformer node which will take the um6 raw data and publish to imu/data -->
-  <include file="$(find nav_3d)/launch/um6.launch" />
+  <!-- Launch the imu transformer node which will take the um6 raw data and publish to imu/data 
+  <include file="$(find nav_3d)/launch/um6.launch" /> -->
     
 </launch>

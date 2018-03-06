@@ -35,7 +35,7 @@ class CloudToLaserscan:
 	height_sub_topic = "/nav_3d/robot_height"
 	pub_topic = "~scan360"
 	robot_height_default = 1.0 # m
-	floor_range = 0.10 # m
+	floor_range = 0.15 # m
 	res = 5 # decimal points
 	min_obj_range = 0.5 # Min obstacle range to be built into the costmap
 	pub_rate = 1 # Hz
