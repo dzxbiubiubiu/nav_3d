@@ -54,8 +54,8 @@ class CloudToLaserscan:
 	_robot_height_init = False
 
 	def __init__(self):
-		self.pub = rospy.Publisher(self.pub_topic, LaserScan, queue_size=1)
-		self.tf_listener = tf.TransformListener()
+		self._pub = rospy.Publisher(self.pub_topic, LaserScan, queue_size=1)
+		self._tf_listener = tf.TransformListener()
 		rospy.Subscriber(self.scan_sub_topic, PointCloud2, self.scan_builder)
 		rospy.Subscriber(self.poly_sub_topic, PolygonStamped, self.update_poly)
 		rospy.Subscriber(self.height_sub_topic, Point32, self.update_height)
@@ -87,13 +87,13 @@ class CloudToLaserscan:
 		# If the polygon and the points being read are in different frames we'll transform the polygon
 		if self._current_poly.header.frame_id != cloud.header.frame_id:
 			# rospy.loginfo("Tranforming the polygon")
-			# self.tf_listener.waitForTransform(point.header.frame_id, polygon.header.frame_id, rospy.Time(), rospy.Duration(0.10))
+			# self._tf_listener.waitForTransform(point.header.frame_id, polygon.header.frame_id, rospy.Time(), rospy.Duration(0.10))
 			i = 0
 			temp_poly_point = PointStamped()
 			for v in self._current_poly.polygon.points:
 				temp_poly_point.header = self._current_poly.header
 				temp_poly_point.point = v # self._current_poly.polygon.points[i]
-				temp_poly_point = self.tf_listener.transformPoint(cloud.header.frame_id, temp_poly_point)
+				temp_poly_point = self._tf_listener.transformPoint(cloud.header.frame_id, temp_poly_point)
 				self._current_poly.polygon.points[i] = temp_poly_point.point
 				i = i + 1
 			self._current_poly.header.frame_id = cloud.header.frame_id
@@ -128,7 +128,7 @@ class CloudToLaserscan:
 		# If it is less than x% of the last scan than we will assume it is not a new full scan and not publish
 		# if (len(self._scan_from_cloud.ranges) - self._scan_from_cloud.ranges.count(numpy.inf)) >= 0.25 * (len(self._scan_to_publish.ranges) - self._scan_to_publish.ranges.count(numpy.inf)):
 		self._scan_to_publish = self._scan_from_cloud
-		self.pub.publish(self._scan_to_publish)
+		self._pub.publish(self._scan_to_publish)
 
 		# self.prev_cloud_ = cloud
 		rospy.loginfo("Made it through the cloud in %f seconds", rospy.get_time() - start_time)

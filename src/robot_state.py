@@ -45,9 +45,9 @@ class RobotState:
 	_robot_footprint.header.frame_id = ref_link
 
 	def __init__(self):
-		self.pub_height = rospy.Publisher(self.hgt_pub_top, Point32, queue_size=1)
-		self.pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
-		self.tf_listener = tf.TransformListener()
+		self._pub_height = rospy.Publisher(self.hgt_pub_top, Point32, queue_size=1)
+		self._pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
+		self._tf_listener = tf.TransformListener()
 
 	def analyze_links(self):
 		"""This function just iterates through every link in the robot and
@@ -56,7 +56,7 @@ class RobotState:
 		the origin.  The reference link can be changed ref_link class variable."""
 
 		# Get all the names for each link in the system
-		links = self.tf_listener.getFrameStrings()
+		links = self._tf_listener.getFrameStrings()
 
 		link_points = []
 
@@ -70,7 +70,7 @@ class RobotState:
 			# Need to build build in frames not designated in the frames_to_ignore 
 			if not frame in self.frames_to_ignore:
 				try:
-					transform = self.tf_listener.lookupTransform(self.ref_link, frame, rospy.Time())
+					transform = self._tf_listener.lookupTransform(self.ref_link, frame, rospy.Time())
 	
 					# The position array is the first section of the tuple transform[0] = [x,y,z]
 					position = transform[0]
@@ -97,8 +97,8 @@ class RobotState:
 		self._robot_footprint.polygon = self.find_footprint(link_points)
 		self._robot_footprint.header.stamp = rospy.Time.now()
 		
-		self.pub_height.publish(self._highest_point)
-		self.pub_footprint.publish(self._robot_footprint.polygon)
+		self._pub_height.publish(self._highest_point)
+		self._pub_footprint.publish(self._robot_footprint.polygon)
 
 		pub_rate = rospy.Rate(self.pub_rate)
 		pub_rate.sleep()
