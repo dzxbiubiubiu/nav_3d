@@ -113,7 +113,9 @@ class CloudToLaserscan:
 					in_poly = point_in_poly(self._current_poly, cloud_point)
 
 					# If the point is not in the polygon then we build it in as an obstacle
-					if not in_poly: ang_dis_list.append( (round(math.atan2(p[1], p[0]), self.res) , round(math.sqrt(p[0]*p[0] + p[1]*p[1]), self.res) ) )
+					if not in_poly: ang_dis_list.append((round(math.atan2(p[1], p[0]), self.res) , round(math.sqrt(p[0]*p[0] + p[1]*p[1]), self.res)))
+				else:
+					ang_dis_list.append((round(math.atan2(p[1], p[0]), self.res) , round(math.sqrt(p[0]*p[0] + p[1]*p[1]), self.res)))
 
 		# Must sort the list of all the points by angles so we can place them in the laserscan data in the right order
 		ang_dis_list.sort()

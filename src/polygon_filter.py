@@ -8,6 +8,7 @@ import sensor_msgs.point__cloud2 as pc2
 from sensor_msgs.msg import LaserScan, Point_cloud2
 from geometry_msgs.msg import PolygonStamped, Point32, PointStamped
 from laser_geometry import LaserProjection
+from point_in_poly import point_in_poly
 
 class PolygonFilter:
 	# Change these variables to adjust the filter

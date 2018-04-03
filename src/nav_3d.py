@@ -16,15 +16,17 @@ __doc__ = """This subcribes to some point cloud topic and then transforms it int
 import rospy
 from cloud_to_laserscan import CloudToLaserscan
 from robot_state import RobotState
+from live_nav import LiveNav
 
 if __name__=='__main__':
 	rospy.init_node('nav_3d')
 
 	try:
 		_RobotState = RobotState()
-		_CloudToLaserscan = CloudToLaserscan()
+		# _CloudToLaserscan = CloudToLaserscan()
+		_LiveNav = LiveNav()
 
-		pub_rate = max(_RobotState.pub_rate, _CloudToLaserscan.pub_rate)
+		pub_rate = max(_RobotState.pub_rate, _LiveNav.pub_rate)
 		p_rate = rospy.Rate(pub_rate)
 		while not rospy.is_shutdown():
 			_RobotState.analyze_links()
