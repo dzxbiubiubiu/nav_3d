@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 
 <launch>
-  <!-- Run the nav_3d node -->
-  <node name="nav_3d" pkg="nav_3d" type="nav_3d.py" output="screen" />
+  <!-- Run the nav_3d node 
+  <node name="nav_3d" pkg="nav_3d" type="nav_3d.py" output="screen" /> -->
 
   <!-- Run the cloud to laserscan node 
   <node name="cloud_to_laserscan" pkg="nav_3d" type="cloud_to_laserscan.py" output="screen" /> -->

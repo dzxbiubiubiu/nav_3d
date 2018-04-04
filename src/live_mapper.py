@@ -23,7 +23,7 @@ class LiveMapper:
 	floor_range = 0.15 # m
 	res = 3 # decimal points
 	min_obj_range = 0.1 # Min obstacle range to be built into the costmap
-	map_res = 0.1 # m 
+	map_res = 0.03 # m 
 	buffer_obs = False # Add a point buffer or no? BUFFER FUNCTIONALITY NOT YET OPERATIONAL
 	buffer_radius = 0.1 # m
 	buffer_density = 5
@@ -42,7 +42,6 @@ class LiveMapper:
 	_robot_height_init = False
 
 	_occupied_list = list()
-	_points_checked = list()
 	_max_x = 0
 	_max_y = 0
 	_min_x = 0
@@ -61,9 +60,9 @@ class LiveMapper:
 
 	def map_builder(self, planar_cloud):
 		start_time = rospy.get_time()
-
+		
+		self._map_to_publish.header = planar_cloud.header
 		if not self._map_init:
-			self._map_to_publish.header = planar_cloud.header
 			self._map_to_publish.info.resolution = self.map_res
 			self._map_to_publish.info.origin.position.z = 0		
 			self._map_to_publish.info.origin.orientation.x = 0
@@ -94,21 +93,22 @@ class LiveMapper:
 
 		self._pub.publish(self._map_to_publish)
 
-		# rospy.loginfo("Made it through the cloud in %f seconds", rospy.get_time() - start_time)
+		rospy.loginfo("Made it through the cloud in %f seconds", rospy.get_time() - start_time)
 		self._iteration_stamp += 1
 
 	def height_sifter(self, planar_cloud):
 		"""This is the simple method of building a map of each point that interects with the robot height"""
 		cloud_point = PointStamped()
 		cloud_point.header = planar_cloud.header
-
+		points_checked = list()
+		prev_height = self._map_to_publish.info.height
+		prev_width = self._map_to_publish.info.width
+		new_obs = list()
 		# need to find the bounds of the map so we'll use the max values of x and y
-
-		self._points_checked = list()
 
 		for p in pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True):
 			if p[2] < self._current_robot_height.z:
-				self._points_checked.append((p[0], p[1]))
+				points_checked.append((p[0], p[1]))
 				if p[0] > self._max_x: self._max_x = p[0]
 				if p[1] > self._max_y: self._max_y = p[1]
 				if p[0] < self._min_x: self._min_x = p[0]
@@ -124,27 +124,47 @@ class LiveMapper:
 
 						# If the point is not in the polygon then we build it in as an obstacle
 						if not in_poly: self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if not in_poly: new_obs.append((p[0], p[1]))
 					else:
 						self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						new_obs.append((p[0], p[1]))
+
 
 		# Build the map now
 		self._map_to_publish.info.origin.position.x = round(self._min_x, 2)
 		self._map_to_publish.info.origin.position.y = round(self._min_y, 2)
 		self._map_to_publish.info.width = int((self._max_x - self._min_x) / self.map_res)
 		self._map_to_publish.info.height = int((self._max_y - self._min_y) / self.map_res)
-		self._map_to_publish.data = [0] * (self._map_to_publish.info.width * self._map_to_publish.info.height)
+		# Checking to see if the size of the map has changed.  No need to refill an entire new map if it is the same size
+		map_dim_change = (prev_width != self._map_to_publish.info.width or prev_height != self._map_to_publish.info.height)
+		if map_dim_change:	self._map_to_publish.data = [0] * (self._map_to_publish.info.width * self._map_to_publish.info.height)
 
 		# Creating the buffer zone for each obstacle point
 		# BUFFER FUNCTIONALITY NOT YET OPERATIONAL.  BUGS MUST BE WORKED OUT
 		if self.buffer_obs: self._occupied_list = self.buffer_points(self._occupied_list)
 		
 		# Finding where to place each obstacle in the cell map
-		for obs in self._occupied_list:
-			if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
-				y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res) - 1)
-				x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res) - 1)
-				placement_spot = (y_placement - 1) * self._map_to_publish.info.width + x_placement
-				self._map_to_publish.data[placement_spot] = 99		
+		if map_dim_change:
+			for obs in self._occupied_list:
+			# If the map dimensions changed then we need to replace all obstacles
+				if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
+					y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res) - 1)
+					x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res) - 1)
+					placement_spot = (y_placement - 1) * self._map_to_publish.info.width + x_placement
+					# print(placement_spot)
+					self._map_to_publish.data[placement_spot] = 99
+		
+		# If map dimensions did not change we can be smart and only place the obstacles that are new
+		else:
+			print('ELSE')
+			for obs in new_obs:
+				# if obs[2] < self._iteration_stamp:
+					if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
+						y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res) - 1)
+						x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res) - 1)
+						placement_spot = (y_placement - 1) * self._map_to_publish.info.width + x_placement
+						# print(placement_spot)
+						self._map_to_publish.data[placement_spot] = 99
 
 	def buffer_points(self, points):
 		"""This function is designed to take in a 2D array points and 

@@ -28,8 +28,7 @@ class LiveNav:
 	# Protected class varaibles
 	_scan_to_publish = LaserScan()
 	_scan_from_cloud = LaserScan()
-	_laser_projector = LaserProjection()
-
+	
 	_current_poly = PolygonStamped()
 	_poly_init = False
 
