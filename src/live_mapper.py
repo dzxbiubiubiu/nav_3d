@@ -22,12 +22,12 @@ class LiveMapper:
 	robot_height_default = 1.0 # m
 	floor_range = 0.15 # m
 	res = 3 # decimal points
-	min_obj_range = 0.1 # Min obstacle range to be built into the costmap
-	map_res = 0.03 # m 
+	map_res = 0.05 # m 
 	buffer_obs = False # Add a point buffer or no? BUFFER FUNCTIONALITY NOT YET OPERATIONAL
 	buffer_radius = 0.1 # m
 	buffer_density = 5
-	slope_threshold = 0.2
+	slope_threshold = 3
+	drivable_height = 0.05
 	pub_rate = 100 # Hz
 	
 	#----------------------------------------------
@@ -146,7 +146,7 @@ class LiveMapper:
 		cloud_size = len(temp_cloud)
 
 		if cloud_size % 2 != 0:	temp_cloud.pop(int(cloud_size/2 - 0.5)) # If the cloud size is odd we will remove the middle point
-		mid_index = len(temp_cloud)/2
+		mid_index = len(temp_cloud)/2 + 1
 		front_cloud = temp_cloud[0:mid_index]
 		back_cloud = temp_cloud[mid_index:]
 		back_cloud.reverse()
@@ -155,7 +155,6 @@ class LiveMapper:
 		# need to find the bounds of the map so we'll use the max values of x and y
 		i = 1 # current point index
 		g = 0 # ground point index
-		# print(front_cloud[:])
 		for p in front_cloud[1:]:
 			if p[2] < self._current_robot_height.z:
 				# points_checked.append((p[0], p[1]))
@@ -169,22 +168,27 @@ class LiveMapper:
 				slope = (front_cloud[i][2] - front_cloud[g][2]) / dist
 				if abs(slope) > self.slope_threshold:
 					if self._poly_init:
-						cloud_point.point.x = p[0]
-						cloud_point.point.y = p[1]
+						cloud_point.point.x = front_cloud[i][0]
+						cloud_point.point.y = front_cloud[i][1]
 					
 						# Check to see if the point is within the robot polygon
 						in_poly = point_in_poly(self._current_poly, cloud_point)
 					
-						# If the point is not in the polygon then we build it in as an obstacle
-						if not in_poly: self._occupied_list.append((p[0], p[1], self._iteration_stamp))
-						if not in_poly: new_obs.append((p[0], p[1]))
+						""" Once the point is flagged by exceeding the slope threshold we perform two more checks to ensure it is an obstacle point:
+						First we'll see if it is inside the robot footprint polygon. If it is we'll assume it is a part of the robot
+						Second we'll check to make that the height difference is not drivable.  It could be flagged via the slope method if it just happens
+						to be a point that is very close to the previous point and is a bit offset in height via noise. """
+						if not in_poly and abs(front_cloud[i][2] - front_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+							new_obs.append((p[0], p[1]))
 					
 					else:
-						# The new farthest ground point is at the current index
-						g = i 
-
-						self._occupied_list.append((p[0], p[1], self._iteration_stamp))
-						new_obs.append((p[0], p[1]))
+						if abs(front_cloud[i][2] - front_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+							new_obs.append((p[0], p[1]))
+				else:
+					# The new furthest ground point is at the current index
+					g = i 
 			i += 1
 
 		i = 1 # current point index
@@ -202,22 +206,27 @@ class LiveMapper:
 				slope = (back_cloud[i][2] - back_cloud[g][2]) / dist
 				if abs(slope) > self.slope_threshold:
 					if self._poly_init:
-						cloud_point.point.x = p[0]
-						cloud_point.point.y = p[1]
+						cloud_point.point.x = back_cloud[i][0]
+						cloud_point.point.y = back_cloud[i][1]
 					
 						# Check to see if the point is within the robot polygon
 						in_poly = point_in_poly(self._current_poly, cloud_point)
 					
-						# If the point is not in the polygon then we build it in as an obstacle
-						if not in_poly: self._occupied_list.append((p[0], p[1], self._iteration_stamp))
-						if not in_poly: new_obs.append((p[0], p[1]))
+						""" Once the point is flagged by exceeding the slope threshold we perform two more checks to ensure it is an obstacle point:
+						First we'll see if it is inside the robot footprint polygon. If it is we'll assume it is a part of the robot
+						Second we'll check to make that the height difference is not drivable.  It could be flagged via the slope method if it just happens
+						to be a point that is very close to the previous point and is a bit offset in height via noise. """
+						if not in_poly and abs(back_cloud[i][2] - back_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+							new_obs.append((p[0], p[1]))
 					
 					else:
-						# The new farthest ground point is at the current index
-						g = i 
-
-						self._occupied_list.append((p[0], p[1], self._iteration_stamp))
-						new_obs.append((p[0], p[1]))
+						if abs(back_cloud[i][2] - back_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+							new_obs.append((p[0], p[1]))
+				else:
+					# The new furthest ground point is at the current index
+					g = i 
 			i += 1
 
 		self.map_builder(new_obs)
