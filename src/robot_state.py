@@ -32,7 +32,7 @@ class RobotState:
 	pub_rate = 1 # hz
 	ref_link = '/base_footprint' # the reference frame which will be considered as the origin of the robot on the ground
 	halo_radius = 0.25 # m
-	halo_density = 10 # no. of points in the halo buffer
+	halo_density = 6 # no. of points in the halo buffer
 	hgt_pub_top = '~robot_height' # topic name to publish the robot height
 	ftprnt_pub_top = '~robot_footprint' # topic name to publish the robot footprint
 	frames_to_ignore = ['map', 'odom', 'left_ur5_tool0_controller', 'right_ur5_tool0_controller'] # This is a list of frames in the TF tree that you want to leave out of the robot footprint. NOTE: no leading slash here

@@ -28,6 +28,7 @@ class LiveMapper:
 	buffer_density = 5
 	slope_threshold = 3
 	drivable_height = 0.05
+	stale_map_time = 10
 	pub_rate = 100 # Hz
 	
 	#----------------------------------------------
@@ -47,10 +48,13 @@ class LiveMapper:
 	_max_y = 0
 	_min_x = 0
 	_min_y = 0
-	_iteration_stamp = 0
+	_init_time_stamp = float()
+	_prev_map_build_time = float()
+	# _iteration_stamp = 0
 	_map_init = False
 
 	def __init__(self):
+		self._init_time_stamp = float()
 		self._pub = rospy.Publisher(self.pub_topic, OccupancyGrid, queue_size=1)
 		self._tf_listener = tf.TransformListener()
 		rospy.Subscriber(self.scan_sub_topic, PointCloud2, self.map_publisher)
@@ -95,7 +99,7 @@ class LiveMapper:
 		self._pub.publish(self._map_to_publish)
 
 		# rospy.loginfo("Made it through the cloud in %f seconds", rospy.get_time() - start_time)
-		self._iteration_stamp += 1
+		# self._iteration_stamp += 1
 
 	def height_sifter(self, planar_cloud):
 		"""This is the simple method of building a map of each point that interects with the robot height"""
@@ -105,6 +109,7 @@ class LiveMapper:
 		prev_height = self._map_to_publish.info.height
 		prev_width = self._map_to_publish.info.width
 		new_obs = list()
+		time_stamp = rospy.get_time() - self._init_time_stamp
 		
 		# need to find the bounds of the map so we'll use the max values of x and y
 		for p in pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True):
@@ -125,10 +130,10 @@ class LiveMapper:
 						in_poly = point_in_poly(self._current_poly, cloud_point)
 
 						# If the point is not in the polygon then we build it in as an obstacle
-						if not in_poly: self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if not in_poly: self._occupied_list.append((p[0], p[1], time_stamp))
 						if not in_poly: new_obs.append((p[0], p[1]))
 					else:
-						self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						self._occupied_list.append((p[0], p[1], time_stamp))
 						new_obs.append((p[0], p[1]))
 
 		self.map_builder(new_obs)
@@ -141,6 +146,7 @@ class LiveMapper:
 		# points_checked = list()
 		new_obs = list()
 		cloud_size = int()
+		time_stamp = rospy.get_time() - self._init_time_stamp
 
 		temp_cloud = list(pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True))
 		cloud_size = len(temp_cloud)
@@ -156,6 +162,7 @@ class LiveMapper:
 		i = 1 # current point index
 		g = 0 # ground point index
 		for p in front_cloud[1:]:
+			# During this for loop p is the same as front_cloud[i]
 			if p[2] < self._current_robot_height.z:
 				# points_checked.append((p[0], p[1]))
 				if p[0] > self._max_x: self._max_x = p[0]
@@ -164,12 +171,12 @@ class LiveMapper:
 				if p[1] < self._min_y: self._min_y = p[1]
 
 				# Sorting what is ground and what is not via slope method
-				dist = math.sqrt(front_cloud[i][0]**2 + front_cloud[i][1]**2) - math.sqrt(front_cloud[g][0]**2 + front_cloud[g][1]**2)
-				slope = (front_cloud[i][2] - front_cloud[g][2]) / dist
+				dist = math.sqrt(p[0]**2 + p[1]**2) - math.sqrt(front_cloud[g][0]**2 + front_cloud[g][1]**2)
+				slope = (p[2] - front_cloud[g][2]) / dist
 				if abs(slope) > self.slope_threshold:
 					if self._poly_init:
-						cloud_point.point.x = front_cloud[i][0]
-						cloud_point.point.y = front_cloud[i][1]
+						cloud_point.point.x = p[0]
+						cloud_point.point.y = p[1]
 					
 						# Check to see if the point is within the robot polygon
 						in_poly = point_in_poly(self._current_poly, cloud_point)
@@ -178,13 +185,13 @@ class LiveMapper:
 						First we'll see if it is inside the robot footprint polygon. If it is we'll assume it is a part of the robot
 						Second we'll check to make that the height difference is not drivable.  It could be flagged via the slope method if it just happens
 						to be a point that is very close to the previous point and is a bit offset in height via noise. """
-						if not in_poly and abs(front_cloud[i][2] - front_cloud[g][2]) > self.drivable_height:
-							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if not in_poly and abs(p[2] - front_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], time_stamp))
 							new_obs.append((p[0], p[1]))
 					
 					else:
-						if abs(front_cloud[i][2] - front_cloud[g][2]) > self.drivable_height:
-							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if abs(p[2] - front_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], time_stamp))
 							new_obs.append((p[0], p[1]))
 				else:
 					# The new furthest ground point is at the current index
@@ -194,6 +201,7 @@ class LiveMapper:
 		i = 1 # current point index
 		g = 0 # ground point index
 		for p in back_cloud[1:]:
+			# During this for loop p is the same as back_cloud[i]
 			if p[2] < self._current_robot_height.z:
 				# points_checked.append((p[0], p[1]))
 				if p[0] > self._max_x: self._max_x = p[0]
@@ -202,12 +210,12 @@ class LiveMapper:
 				if p[1] < self._min_y: self._min_y = p[1]
 
 				# Sorting what is ground and what is not via slope method
-				dist = math.sqrt(back_cloud[i][0]**2 + back_cloud[i][1]**2) - math.sqrt(back_cloud[g][0]**2 + back_cloud[g][1]**2)
-				slope = (back_cloud[i][2] - back_cloud[g][2]) / dist
+				dist = math.sqrt(p[0]**2 + p[1]**2) - math.sqrt(back_cloud[g][0]**2 + back_cloud[g][1]**2)
+				slope = (p[2] - back_cloud[g][2]) / dist
 				if abs(slope) > self.slope_threshold:
 					if self._poly_init:
-						cloud_point.point.x = back_cloud[i][0]
-						cloud_point.point.y = back_cloud[i][1]
+						cloud_point.point.x = p[0]
+						cloud_point.point.y = p[1]
 					
 						# Check to see if the point is within the robot polygon
 						in_poly = point_in_poly(self._current_poly, cloud_point)
@@ -216,13 +224,13 @@ class LiveMapper:
 						First we'll see if it is inside the robot footprint polygon. If it is we'll assume it is a part of the robot
 						Second we'll check to make that the height difference is not drivable.  It could be flagged via the slope method if it just happens
 						to be a point that is very close to the previous point and is a bit offset in height via noise. """
-						if not in_poly and abs(back_cloud[i][2] - back_cloud[g][2]) > self.drivable_height:
-							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if not in_poly and abs(p[2] - back_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], time_stamp))
 							new_obs.append((p[0], p[1]))
 					
 					else:
-						if abs(back_cloud[i][2] - back_cloud[g][2]) > self.drivable_height:
-							self._occupied_list.append((p[0], p[1], self._iteration_stamp))
+						if abs(p[2] - back_cloud[g][2]) > self.drivable_height:
+							self._occupied_list.append((p[0], p[1], time_stamp))
 							new_obs.append((p[0], p[1]))
 				else:
 					# The new furthest ground point is at the current index
@@ -233,32 +241,16 @@ class LiveMapper:
 
 
 	def buffer_points(self, points):
-		"""This function is designed to take in a 2D array points and 
-		create add a radius of new points with the center of each of the
-		original points.  This is useful when dealing with the footprint
-		of a robot to create a better and safer robot footprint.
-		Arguments to pass in:
-		points = 2D array of points numpy.array([:,:])
-		radius = buffer distance from the center of each point
-		density = number of points to form the circle around each point
-		Returns an 2D list of points"""
-		buffed_occupied_list = list()
-		theta_increment = 2 * 3.1416 / self.buffer_density
-
-		for point in points:
-			current_theta = 0
-			for i in list(range(0, self.buffer_density)):
-				for rad_i in list(range(1, self.buffer_density)):
-					x_new = point[0] + self.buffer_radius * (self.buffer_density / rad_i) * numpy.cos(current_theta + theta_increment)
-					y_new = point[1] + self.buffer_radius * (self.buffer_density / rad_i) * numpy.sin(current_theta + theta_increment)
-					buffed_occupied_list.append((x_new, y_new))
-
-				current_theta += theta_increment
-		
-		return buffed_occupied_list
+		"""This method will just do a pre-calculation to determine how to fill the map data structure
+		with buffered points.  Essentially this will just calculate how to fill a circle with a cellular
+		map and the given resolution parameters"""
+		cell_radius = int(self.buffer_radius / self.map_res)
+		y_index = self._map_to_publish.info.width
+		# TODODODODODODODODODODODODO
 
 	def map_builder(self, new_obs):
 		"""This function builds the map based on the obstacle list provided"""
+		stale_map = True if rospy.get_time() - self._prev_map_build_time > self.stale_map_time else False
 
 		prev_height = self._map_to_publish.info.height
 		prev_width = self._map_to_publish.info.width
@@ -278,24 +270,37 @@ class LiveMapper:
 		if self.buffer_obs: self._occupied_list = self.buffer_points(self._occupied_list)
 		
 		# Finding where to place each obstacle in the cell map
-		if map_dim_change:
+		if map_dim_change or stale_map:
+			i = 0
 			for obs in self._occupied_list:
-			# If the map dimensions changed then we need to replace all obstacles
-				if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
-					y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res) - 1)
-					x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res) - 1)
-					placement_spot = (y_placement - 1) * self._map_to_publish.info.width + x_placement
-					self._map_to_publish.data[placement_spot] = 99
+				obs_prob = min(int(99 / ((rospy.get_time() - obs[2]) / 90)), 99)
+				if obs_prob > 5:	
+				# If the map dimensions changed then we need to replace all obstacles
+					if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
+						y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res))
+						x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res))
+						placement_spot = (y_placement) * self._map_to_publish.info.width + x_placement
+
+					if placement_spot < len(self._map_to_publish.data): self._map_to_publish.data[placement_spot] = obs_prob
+				else:
+					self._occupied_list.pop(i)
+				i += 1
 
 		# If map dimensions did not change we can be smart and only place the obstacles that are new
 		else:
 			for obs in new_obs:
-				# if obs[2] < self._iteration_stamp:
-					if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
-						y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res) - 1)
-						x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res) - 1)
-						placement_spot = (y_placement - 1) * self._map_to_publish.info.width + x_placement
-						self._map_to_publish.data[placement_spot] = 99
+				if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
+					y_placement = int(((obs[1] - self._map_to_publish.info.origin.position.y) / self.map_res))
+					x_placement = int(((obs[0] - self._map_to_publish.info.origin.position.x) / self.map_res))
+					placement_spot = (y_placement) * self._map_to_publish.info.width + x_placement
+					if placement_spot < len(self._map_to_publish.data): self._map_to_publish.data[placement_spot] = 99 # If it is a new obstacle we will give it a high probability
+
+		self._prev_map_build_time = rospy.get_time()
+
+	def map_maintainer(self):
+		"""This method is designed to maintain a costmap of the environment given raw obstacle maps"""
+
+		pass
 
 	def update_poly(self, poly_stamped):
 		"""Only updates the _current_poly to the newly published polygon"""
