@@ -23,13 +23,15 @@ class LiveMapper:
 	floor_range = 0.15 # m
 	res = 3 # decimal points
 	map_res = 0.05 # m 
+	slope_threshold = 3
+	drivable_height = 0.05 # m
+	stale_map_time = 10 # s
+	obs_decay_time = 90 # s
+	pub_rate = 100 # Hz
+
 	buffer_obs = False # Add a point buffer or no? BUFFER FUNCTIONALITY NOT YET OPERATIONAL
 	buffer_radius = 0.1 # m
 	buffer_density = 5
-	slope_threshold = 3
-	drivable_height = 0.05
-	stale_map_time = 10
-	pub_rate = 100 # Hz
 	
 	#----------------------------------------------
 	# Protected class varaibles
@@ -143,12 +145,12 @@ class LiveMapper:
 		"""This is the simple method of building a map of each point that interects with the robot height"""
 		cloud_point = PointStamped()
 		cloud_point.header = planar_cloud.header
-		# points_checked = list()
+		points_checked = list()
 		new_obs = list()
 		cloud_size = int()
 		time_stamp = rospy.get_time() - self._init_time_stamp
 
-		temp_cloud = list(pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True))
+		temp_cloud = list((p[0],p[1],p[2],math.sqrt(p[0]**2 + p[1]**2)) for p in pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True)) # The other field not used here is instensity but probably could be customized
 		cloud_size = len(temp_cloud)
 
 		if cloud_size % 2 != 0:	temp_cloud.pop(int(cloud_size/2 - 0.5)) # If the cloud size is odd we will remove the middle point
@@ -156,15 +158,18 @@ class LiveMapper:
 		front_cloud = temp_cloud[0:mid_index]
 		back_cloud = temp_cloud[mid_index:]
 		back_cloud.reverse()
-		front_cloud.insert(0, (0,0,0))
-		back_cloud.insert(0, (0,0,0))
+		front_cloud.insert(0, (0,0,0,0))
+		back_cloud.insert(0, (0,0,0,0))
+		front_cloud.sort(key=lambda p: p[3]) # We sort each of the clouds by XY distance from the robot
+		back_cloud.sort(key=lambda p: p[3]) # We sort each of the clouds by XY distance from the robot
+
 		# need to find the bounds of the map so we'll use the max values of x and y
 		i = 1 # current point index
 		g = 0 # ground point index
 		for p in front_cloud[1:]:
 			# During this for loop p is the same as front_cloud[i]
 			if p[2] < self._current_robot_height.z:
-				# points_checked.append((p[0], p[1]))
+				points_checked.append((p[0], p[1]))
 				if p[0] > self._max_x: self._max_x = p[0]
 				if p[1] > self._max_y: self._max_y = p[1]
 				if p[0] < self._min_x: self._min_x = p[0]
@@ -273,7 +278,10 @@ class LiveMapper:
 		if map_dim_change or stale_map:
 			i = 0
 			for obs in self._occupied_list:
-				obs_prob = min(int(99 / ((rospy.get_time() - obs[2]) / 90)), 99)
+				obs_prob = min(int(99 * math.exp(-(rospy.get_time() - obs[2]) / self.obs_decay_time)), 99) # Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
+				# obs_prob = min(int(99 - 99 * (rospy.get_time() - obs[2]) / self.obs_decay_time), 99) # Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
+
+				# If the probability of an obstacle is greater than 5% we will build it in the map if not let's dump it from the list
 				if obs_prob > 5:	
 				# If the map dimensions changed then we need to replace all obstacles
 					if not (obs[0] < self._min_x or obs[0] > self._max_x or obs[1] < self._min_y or obs[1] > self._max_y):
