@@ -18,6 +18,7 @@ class LiveMapper:
 	scan_sub_topic = "/laser_stitcher/planar_cloud"
 	poly_sub_topic = "/move_base/local_costmap/footprint" # "test_poly_node/polygon"
 	height_sub_topic = "/nav_3d/robot_height"
+	alg_name = "slope"
 	pub_topic = "~live_map"
 	robot_height_default = 1.0 # m
 	floor_range = 0.15 # m
@@ -29,10 +30,6 @@ class LiveMapper:
 	obs_decay_time = 90 # s
 	pub_rate = 100 # Hz
 
-	buffer_obs = False # Add a point buffer or no? BUFFER FUNCTIONALITY NOT YET OPERATIONAL
-	buffer_radius = 0.1 # m
-	buffer_density = 5
-	
 	#----------------------------------------------
 	# Protected class varaibles
 	_map_to_publish = OccupancyGrid()
@@ -56,7 +53,6 @@ class LiveMapper:
 	_map_init = False
 
 	def __init__(self):
-		self._init_time_stamp = float()
 		self._pub = rospy.Publisher(self.pub_topic, OccupancyGrid, queue_size=1)
 		self._tf_listener = tf.TransformListener()
 		rospy.Subscriber(self.scan_sub_topic, PointCloud2, self.map_publisher)
@@ -87,7 +83,7 @@ class LiveMapper:
 			for v in self._current_poly.polygon.points:
 				temp_poly_point.header = self._current_poly.header
 				temp_poly_point.point = v # self._current_poly.polygon.points[i]
-				temp_poly_point = self._tf_listener.transformPoint(scan.header.frame_id, temp_poly_point)
+				temp_poly_point = self._tf_listener.transformPoint(planar_cloud.header.frame_id, temp_poly_point)
 				self._current_poly.polygon.points[i] = temp_poly_point.point
 				i += 1
 			self._current_poly.header.frame_id = planar_cloud.header.frame_id
@@ -96,7 +92,12 @@ class LiveMapper:
 		
 		if not self._robot_height_init: rospy.logwarn_throttle(30, 'The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f' %self.robot_height_default)
 
-		self.slope_sifter(planar_cloud)
+		if self.alg_name == "height": 
+			self.height_sifter(planar_cloud)
+		elif self.alg_name == "slope": 
+			self.slope_sifter(planar_cloud)
+		else:
+			rospy.logerr("Failed to receive the name of an obstacle detection algorithm to run.  Nav_3d not operational.")
 
 		self._pub.publish(self._map_to_publish)
 
@@ -153,7 +154,7 @@ class LiveMapper:
 		temp_cloud = list((p[0],p[1],p[2],math.sqrt(p[0]**2 + p[1]**2)) for p in pc2.read_points(planar_cloud, field_names = ("x", "y", "z"), skip_nans=True)) # The other field not used here is instensity but probably could be customized
 		cloud_size = len(temp_cloud)
 
-		if cloud_size % 2 != 0:	temp_cloud.pop(int(cloud_size/2 - 0.5)) # If the cloud size is odd we will remove the middle point
+		if cloud_size % 2 != 0:	temp_cloud.pop(int((cloud_size -1) / 2)) # If the cloud size is odd we will remove the middle point
 		mid_index = len(temp_cloud)/2 + 1
 		front_cloud = temp_cloud[0:mid_index]
 		back_cloud = temp_cloud[mid_index:]
@@ -244,15 +245,6 @@ class LiveMapper:
 
 		self.map_builder(new_obs)
 
-
-	def buffer_points(self, points):
-		"""This method will just do a pre-calculation to determine how to fill the map data structure
-		with buffered points.  Essentially this will just calculate how to fill a circle with a cellular
-		map and the given resolution parameters"""
-		cell_radius = int(self.buffer_radius / self.map_res)
-		y_index = self._map_to_publish.info.width
-		# TODODODODODODODODODODODODO
-
 	def map_builder(self, new_obs):
 		"""This function builds the map based on the obstacle list provided"""
 		stale_map = True if rospy.get_time() - self._prev_map_build_time > self.stale_map_time else False
@@ -269,10 +261,6 @@ class LiveMapper:
 		# Checking to see if the size of the map has changed.  No need to refill an entire new map if it is the same size
 		map_dim_change = (prev_width != self._map_to_publish.info.width or prev_height != self._map_to_publish.info.height)
 		if map_dim_change:	self._map_to_publish.data = [0] * (self._map_to_publish.info.width * self._map_to_publish.info.height)
-
-		# Creating the buffer zone for each obstacle point
-		# BUFFER FUNCTIONALITY NOT YET OPERATIONAL.  BUGS MUST BE WORKED OUT
-		if self.buffer_obs: self._occupied_list = self.buffer_points(self._occupied_list)
 		
 		# Finding where to place each obstacle in the cell map
 		if map_dim_change or stale_map:

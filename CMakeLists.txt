@@ -8,13 +8,17 @@ project(nav_3d)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  geometry_msgs
-  laser_geometry
   roscpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  laser_geometry
   roslib
   rospy
-  sensor_msgs
+  tf2
   tf
+  pcl_conversions
+  pcl_ros
 )
 
 ## System dependencies are found with CMake's conventions
@@ -107,10 +111,10 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES nav_3d
-#  CATKIN_DEPENDS geometry_msgs laser_geometry roscpp roslib rospy sensor_msgs tf
-#  DEPENDS system_lib
+  INCLUDE_DIRS include
+  LIBRARIES nav_3d
+  CATKIN_DEPENDS geometry_msgs laser_geometry roscpp roslib rospy sensor_msgs tf2 std_msgs
+  DEPENDS
 )
 
 ###########
@@ -119,10 +123,7 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
-include_directories(
-# include
-  ${catkin_INCLUDE_DIRS}
-)
+include_directories(include ${catkin_INCLUDE_DIRS})
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -138,6 +139,10 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/nav_3d_node.cpp)
+
+add_executable(live_mapper src/live_mapper.cpp)
+target_link_libraries(live_mapper ${catkin_LIBRARIES})
+
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -163,10 +168,17 @@ include_directories(
 
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
-# install(PROGRAMS
-#   scripts/my_python_script
-#   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-# )
+install(PROGRAMS
+  src/cloud_to_laserscan
+  src/live_mapper
+  src/live_nav
+  src/map_maintainer
+  src/nav_3d
+  src/point_in_poly
+  src/polygon_filter
+  src/robot_state
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
 
 ## Mark executables and/or libraries for installation
 # install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_node
@@ -201,3 +213,14 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
+
+## Install project namespaced headers
+install(
+  DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+)
+
+install(DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+  FILES_MATCHING PATTERN "*.h"
+  PATTERN ".svn" EXCLUDE)
