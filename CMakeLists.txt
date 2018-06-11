@@ -130,6 +130,8 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 #   src/${PROJECT_NAME}/nav_3d.cpp
 # )
 
+add_library(point_in_poly src/point_in_poly.cpp)
+
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
@@ -141,8 +143,7 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 # add_executable(${PROJECT_NAME}_node src/nav_3d_node.cpp)
 
 add_executable(live_mapper src/live_mapper.cpp)
-target_link_libraries(live_mapper ${catkin_LIBRARIES})
-
+target_link_libraries(live_mapper point_in_poly ${catkin_LIBRARIES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -215,10 +216,6 @@ install(PROGRAMS
 # catkin_add_nosetests(test)
 
 ## Install project namespaced headers
-install(
-  DIRECTORY include/${PROJECT_NAME}/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-)
 
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}

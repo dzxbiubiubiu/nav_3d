@@ -10,8 +10,10 @@
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/Point32.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
+#include <sensor_msgs/LaserScan.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <math.h>
+#include "point_in_poly.h"
 
 #include <tf/transform_listener.h>
 
@@ -40,12 +42,14 @@ private:
 
 	//Varibles that will be set via yaml file
 	std::string alg_name_;
+	std::string map_reg_;
 	float robot_height_default_;
 	float floor_range_;
 	int res_;
 	float map_res_;
 	float drivable_height_;
 	float min_obj_dist_;
+	float max_robot_reach_;
 	float stale_map_time_;
 	float obs_decay_time_;
 	float pub_rate_;
@@ -53,6 +57,8 @@ private:
 	//Robot footprint variables
 	geometry_msgs::PolygonStamped current_poly_;
 	bool poly_init_;
+	bool in_poly_;
+	geometry_msgs::PointStamped robot_base_point_;
 
 	//Robot height variables
 	geometry_msgs::Point32 current_robot_height_;
@@ -60,8 +66,10 @@ private:
 
 	//Map variables
 	nav_msgs::OccupancyGrid map_to_publish_;
+	sensor_msgs::LaserScan scan_to_publish_;
 	std::vector<point_XYZDTC> occupied_list_;
 	std::vector<point_XYZDTC> new_obs_;
+	int num_of_pts_;
 	float max_x_;
 	float max_y_;
 	float min_x_;
@@ -76,6 +84,7 @@ private:
 	void heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud);
 	void slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud);
 	void mapBuilder(const std::vector<point_XYZDTC> new_obs_);
+	void scanBuilder();
 	void updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped);
 	void updateHeight(const geometry_msgs::Point32::ConstPtr& new_height);
 	static bool compareDistance(point_XYZDTC p1, point_XYZDTC p2);

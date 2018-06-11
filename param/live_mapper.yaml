@@ -1,12 +1,15 @@
 nav_3d:
-  obstacle_algorithm:  "slope"
   map_pub_topic:  "nav_3d/live_map"
   planar_cloud_topic:  "laser_stitcher/planar_cloud"
   poly_topic:  "nav_3d/robot_footprint"
   height_topic:  "nav_3d/robot_height"
+  robot_base_frame:  "base_footprint"
+  obstacle_algorithm:  "height"
+  map_registration:  "scan"
   robot_height_default:  1.0
   floor_range:  0.15
   min_obj_dist:  0.0
+  max_robot_reach:  1.0
   res:  3
   map_res:  0.05
   slope_threshold:  3

@@ -2,6 +2,7 @@
 
 import math
 import numpy
+import rospy
 from geometry_msgs.msg import Point32, PointStamped, PolygonStamped
 
 def point_in_poly(polygon, point):
@@ -12,10 +13,12 @@ def point_in_poly(polygon, point):
 	However, if this is being called very often the function transformPoint will slow performance greatly. 
 	In a case like that, it is better to ensure the point and polgyon are in the same frame already."""
 	if not isinstance(polygon, PolygonStamped):
-		rospy.loginfo("A stamped polygon was not passed into point_in_poly")
+		rospy.logerr("A stamped polygon was not passed into point_in_poly.  Aborting point_in_poly.")
+		raise Exception("A stamped polygon was not passed into point_in_poly.  Aborting point_in_poly.")
 
 	if not isinstance(point, PointStamped):
-		rospy.loginfo("A stamped point was not passed into point_in_poly")
+		rospy.logerr("A stamped point was not passed into point_in_poly.  Aborting point_in_poly.")
+		raise Exception("A stamped point was not passed into point_in_poly.  Aborting point_in_poly.")
 
 	n = len(polygon.polygon.points)
 
@@ -23,7 +26,9 @@ def point_in_poly(polygon, point):
 
 	# Transforming the point into the same frame as the polygon if it is necessary
 	if polygon.header.frame_id != point.header.frame_id:
-		point = tf_listener.transformPoint(polygon.header.frame_id, point)
+		# point = tf_listener.transformPoint(polygon.header.frame_id, point)
+		rospy.logerr("The polygon and point were not provided in the same frame.  Aborting point_in_poly.")
+		raise Exception("The polygon and point were not provided in the same frame.  Aborting point_in_poly.")
 
 	# Getting rid of stamped portions
 	polygon = polygon.polygon

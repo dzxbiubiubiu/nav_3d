@@ -9,18 +9,21 @@
 LiveMapper::LiveMapper()
 {
 	// These variables not used elsewhere in class...
-	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic;
+	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, robot_base_frame;
 
 	if(!nh_.param<std::string>("nav_3d/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
 	if(!nh_.param<std::string>("nav_3d/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud") )
 		ROS_WARN_STREAM("[Nav_3d] Failed to get planar cloud topic from parameter server - defaulting to " << planar_cloud_topic << ".");
-	nh_.param<std::string>("nav_3d/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/poly_topic", poly_topic, "nav_3d/robot_footprint");
 	nh_.param<std::string>("nav_3d/height_topic", height_topic, "nav_3d/robot_height");
+	nh_.param<std::string>("nav_3d/robot_base_frame", robot_base_frame, "base_footprint");
+	nh_.param<std::string>("nav_3d/obstacle_algorithm", alg_name_, "slope");
+	nh_.param<std::string>("nav_3d/map_registration", map_reg_, "map");
 	nh_.param<float>("nav_3d/robot_height_default", robot_height_default_, 1);
 	nh_.param<float>("nav_3d/floor_range", floor_range_, 0.1);
 	nh_.param<float>("nav_3d/min_obj_dist", min_obj_dist_, 0.0);
+	nh_.param<float>("nav_3d/max_robot_reach", max_robot_reach_, 1.0);
 	nh_.param<int>("nav_3d/res", res_, 3);
 	nh_.param<float>("nav_3d/map_res", map_res_, 0.05);
 	nh_.param<float>("nav_3d/slope_threshold", slope_threshold_, 3);
@@ -34,16 +37,30 @@ LiveMapper::LiveMapper()
 	poly_sub_ = nh_.subscribe<geometry_msgs::PolygonStamped>(poly_topic, 1, &LiveMapper::updatePoly, this);
 	height_sub_ = nh_.subscribe<geometry_msgs::Point32>(height_topic, 1, &LiveMapper::updateHeight, this);
 
-	// Publisher
-	map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>(map_pub_topic, 1, this);
-	
+	// Publisher (publish a occgrid if map output or laserscan if scan output)
+	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+		map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>(map_pub_topic, 1, this);
+	else if((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+		map_pub_ = nh_.advertise<sensor_msgs::LaserScan>(map_pub_topic, 1, this);
+	else
+		ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
+
 	// Time keeping
 	start_time_ = ros::Time::now();
 	prev_map_build_time_ = ros::Time(0);
-	// prev_map_build_time_ = ros::Time(0) - ros::Duration(stale_map_time_ + 1);
 
 	// Defaulting the robot height. It will be updated to the true value via updateHeight
 	current_robot_height_.z = robot_height_default_;
+	robot_base_point_.header.frame_id = robot_base_frame;
+	robot_base_point_.header.stamp = ros::Time::now();
+	robot_base_point_.point.x = 0;
+	robot_base_point_.point.y = 0;
+	robot_base_point_.point.z = 0;
+
+	// Initializing
+	poly_init_ = false;
+	map_init_ = false;
+	robot_height_init_ = false;
 
 	while(ros::ok())
 		ros::spinOnce();
@@ -51,19 +68,48 @@ LiveMapper::LiveMapper()
 
 void LiveMapper::mapPublisher(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud)
 {
-	map_to_publish_.header = planar_cloud->header;
-
-	// Initializing the map
-	if(!map_init_)
+	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
 	{
-		map_to_publish_.info.resolution = map_res_;
-		map_to_publish_.info.origin.position.z = 0;
-		map_to_publish_.info.origin.orientation.x = 0;
-		map_to_publish_.info.origin.orientation.y = 0;
-		map_to_publish_.info.origin.orientation.z = 0;
-		map_to_publish_.info.origin.orientation.w = 1.0;
-		map_init_ = true;
+		map_to_publish_.header = planar_cloud->header;
+
+		// Initializing the map
+		if(!map_init_)
+		{
+			map_to_publish_.info.resolution = map_res_;
+			map_to_publish_.info.origin.position.z = 0;
+			map_to_publish_.info.origin.orientation.x = 0;
+			map_to_publish_.info.origin.orientation.y = 0;
+			map_to_publish_.info.origin.orientation.z = 0;
+			map_to_publish_.info.origin.orientation.w = 1.0;
+			map_init_ = true;
+		}		
 	}
+	else if((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+	{
+		scan_to_publish_.header = planar_cloud->header;
+
+		// Initializing the scan
+		if(!map_init_)
+		{
+			scan_to_publish_.angle_min = round(-3.141592653589793 * pow(10, res_))/pow(10, res_); // rounding to the res decimal place;
+			scan_to_publish_.angle_max = round(3.141592653589793 * pow(10, res_))/(pow(10, res_)); // rounding to the res decimal place;
+			scan_to_publish_.angle_increment = pow(10, -res_);
+			num_of_pts_ = (int) ((scan_to_publish_.angle_max - scan_to_publish_.angle_min) / scan_to_publish_.angle_increment); //((round(scan_to_publish_.angle_max * pow(10, res_)) / pow(10, res_) - round(scan_to_publish_.angle_min * pow(10, res_)) / pow(10, res_)) / (round(scan_to_publish_.angle_increment * pow(10, res_)) / pow(10, res_)));
+			scan_to_publish_.time_increment = 0;  // Unsure of this but it is likely not needed
+			scan_to_publish_.scan_time = 0;  // Unsure of this but it is likely not needed as well
+			scan_to_publish_.range_min = 0.01;
+			scan_to_publish_.range_max = 30.0;
+			map_init_ = true;
+			double inf = std::numeric_limits<double>::infinity();
+
+			for(int i=0; i<num_of_pts_; i++)
+			{
+				scan_to_publish_.ranges.push_back(inf);
+				scan_to_publish_.intensities.push_back(0);
+			}
+		}		
+	}
+
 
 	//If the polygon and the points being read are different frames we'll transform the polygon
 	if(current_poly_.header.frame_id != planar_cloud->header.frame_id)
@@ -86,17 +132,27 @@ void LiveMapper::mapPublisher(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		current_poly_.header.frame_id = planar_cloud->header.frame_id;
 	}
 
+
 	if(!robot_height_init_)
 		ROS_WARN_THROTTLE(30, "The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f.", robot_height_default_);
 
+	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if(alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method")
 		this->heightMethod(planar_cloud);
 	else if(alg_name_ == "slope" || alg_name_ == "Slope" || alg_name_ == "SLOPE" || alg_name_ == "slope_method" || alg_name_ == "slope method" || alg_name_ == "SLOPE METHOD" || alg_name_ == "Slope Method")
-		this->slopeMethod(planar_cloud);
+	{
+	// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
+	// listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_, robot_base_point_);
+
+	this->slopeMethod(planar_cloud);
+	}
 	else
 		ROS_ERROR_STREAM("[Nav_3d] Failed to receive an algorithm to run.  Cannot perform obstacle detection.");
 
-	map_pub_.publish(map_to_publish_);
+	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+		map_pub_.publish(map_to_publish_);
+	else if((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+		map_pub_.publish(scan_to_publish_);
 }
 
 void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud)
@@ -112,7 +168,6 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	point_XYZDTC temp_obs_point;
 	for(int i=0; i<temp_cloud->points.size(); i++)
 	{
-		ROS_INFO_STREAM(current_robot_height_.z);
 		if(temp_cloud->points[i].z < current_robot_height_.z)
 		{
 			if(temp_cloud->points[i].x > max_x_)
@@ -125,30 +180,34 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 				min_y_ = temp_cloud->points[i].y;
 
 			// This is how the height method determines what the ground is
-			if(!(temp_cloud->points[i].z > - floor_range_ && temp_cloud->points[i].z < floor_range_))
+			if(!(temp_cloud->points[i].z > - floor_range_ && temp_cloud->points[i].z <  floor_range_))
 			{
+				temp_obs_point.x = temp_cloud->points[i].x;
+				temp_obs_point.y = temp_cloud->points[i].y;
+				temp_obs_point.z = temp_cloud->points[i].z;
+				temp_obs_point.distance = sqrt(temp_obs_point.x * temp_obs_point.x + temp_obs_point.y * temp_obs_point.y);
+				temp_obs_point.time_stamp = ros::Time::now();
+				temp_obs_point.count_stamp = i;
+		
 				if(poly_init_)
 				{
 					cloud_point.point.x = temp_cloud->points[i].x;
 					cloud_point.point.y = temp_cloud->points[i].y;
 
-					temp_obs_point.x = temp_cloud->points[i].x;
-					temp_obs_point.y = temp_cloud->points[i].y;
-					temp_obs_point.z = temp_cloud->points[i].z;
-					temp_obs_point.distance = sqrt(temp_obs_point.x * temp_obs_point.x + temp_obs_point.y * temp_obs_point.y);
-					temp_obs_point.time_stamp = ros::Time::now();
-					temp_obs_point.count_stamp = i;
-
 					// Check to see if the points is within the robot
-					// in_poly = point_in_poly(current_poly_, cloud_point);
+					// This is made efficient by first checking to make sure the point is within the robot possible max reach
+					if(temp_obs_point.distance < max_robot_reach_)
+					{
+						in_poly_ = point_in_poly(current_poly_, cloud_point);
 
-					// If the point is not in the polygon then we build it in as an obstacle					
+						// If the point is not in the polygon then we build it in as an obstacle					
+						if(!in_poly_)
+						{
+							occupied_list_.push_back(temp_obs_point);
+							new_obs_.push_back(temp_obs_point);
+						}						
+					}					
 
-					// if(!in_poly)
-					// {
-						occupied_list_.push_back(temp_obs_point);
-						new_obs_.push_back(temp_obs_point);
-					// }
 				}
 				else
 				{
@@ -159,7 +218,10 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		}
 	}
 
-	this->mapBuilder(new_obs_);
+	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+		this->mapBuilder(new_obs_);
+	else if((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+		this->scanBuilder();
 }
 
 void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud)
@@ -189,9 +251,10 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	std::vector<point_XYZDTC> front_cloud(cloud_size / 2);
 	for(int i=0; i<mid_index; i++)
 	{
-		front_cloud[i].x = temp_cloud->points[i].x;
-		front_cloud[i].y = temp_cloud->points[i].y;
-		front_cloud[i].z = temp_cloud->points[i].z;
+		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
+		front_cloud[i].x = temp_cloud->points[i].x;// - robot_base_point_.point.x;
+		front_cloud[i].y = temp_cloud->points[i].y;// - robot_base_point_.point.y;
+		front_cloud[i].z = temp_cloud->points[i].z;// - robot_base_point_.point.z;
 		front_cloud[i].distance = sqrt(front_cloud[i].x * front_cloud[i].x + front_cloud[i].y * front_cloud[i].y);		
 		front_cloud[i].time_stamp = ros::Time::now();
 		front_cloud[i].count_stamp = i; // counter for sanity checks
@@ -206,10 +269,11 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	std::vector<point_XYZDTC> back_cloud(cloud_size / 2);
 	for(int i=0; i<mid_index; i++)
 	{
-		back_cloud[i].distance = sqrt(temp_cloud->points[i + mid_index].x * temp_cloud->points[i + mid_index].x + temp_cloud->points[i + mid_index].y * temp_cloud->points[i + mid_index].y);
-		back_cloud[i].x = temp_cloud->points[i + mid_index].x;
-		back_cloud[i].y = temp_cloud->points[i + mid_index].y;
-		back_cloud[i].z = temp_cloud->points[i + mid_index].z;
+		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
+		back_cloud[i].x = temp_cloud->points[i + mid_index].x;// - robot_base_point_.point.x;
+		back_cloud[i].y = temp_cloud->points[i + mid_index].y;// - robot_base_point_.point.y;
+		back_cloud[i].z = temp_cloud->points[i + mid_index].z;// - robot_base_point_.point.z;
+		back_cloud[i].distance = sqrt(back_cloud[i].x * back_cloud[i].x + back_cloud[i].y * back_cloud[i].y);		
 		back_cloud[i].time_stamp = ros::Time::now();
 		back_cloud[i].count_stamp = i; // counter for sanity checks
 	}
@@ -245,13 +309,17 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 					cloud_point.point.y = front_cloud[i].y;
 
 					// Check to see if the point is within the robot footprint
-					// in_poly = point_in_poly(current_poly_, cloud_point);
+					// This is made efficient by first checking to make sure the point is within the robot possible max reach
+					if(front_cloud[i].distance < max_robot_reach_)
+					{
+						in_poly_ = point_in_poly(current_poly_, cloud_point);
 
-					// if(!in_poly && fabs(front_cloud[i].z - front_cloud[g].z) > drivable_height_)
-					// {
-						occupied_list_.push_back(front_cloud[i]);
-						new_obs_.push_back(front_cloud[i]);
-					// }
+						if(!in_poly_ && fabs(front_cloud[i].z - front_cloud[g].z) > drivable_height_)
+						{
+							occupied_list_.push_back(front_cloud[i]);
+							new_obs_.push_back(front_cloud[i]);
+						}
+					}
 				}
 				else
 				{
@@ -297,13 +365,17 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 					cloud_point.point.y = back_cloud[i].y;
 
 					// Check to see if the point is within the robot footprint
-					// in_poly = point_in_poly(current_poly_, cloud_point);
+					// This is made efficient by first checking to make sure the point is within the robot possible max reach
+					if(back_cloud[i].distance <   max_robot_reach_)
+					{
+						in_poly_ = point_in_poly(current_poly_, cloud_point);
 
-					// if(!in_poly && fabs(back_cloud[i].z - back_cloud[g].z) > drivable_height_)
-					// {
-						occupied_list_.push_back(back_cloud[i]);
-						new_obs_.push_back(back_cloud[i]);
-					// }
+						if(!in_poly_ && fabs(back_cloud[i].z - back_cloud[g].z) > drivable_height_)
+						{
+							occupied_list_.push_back(back_cloud[i]);
+							new_obs_.push_back(back_cloud[i]);
+						}			
+					}
 				}
 				else
 				{
@@ -322,7 +394,10 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 		}
 	}
 
-	this->mapBuilder(new_obs_);
+	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+		this->mapBuilder(new_obs_);
+	else if((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+		this->scanBuilder();
 }
 
 // The Map Builder function contructs an OccupancyGrid map based on the class varibale occupied_list and new_obs.
@@ -407,6 +482,36 @@ void LiveMapper::mapBuilder(const std::vector<point_XYZDTC> new_obs_)
 	prev_map_build_time_ = ros::Time::now();
 }
 
+void LiveMapper::scanBuilder()
+{
+	int obs_prob, placement_spot;
+
+	for(int i=0; i<occupied_list_.size(); i++)
+	{
+		obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
+		// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
+		// obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
+		// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
+		
+		// If the probability of an obstacle is greater than 5% we will build it into the map
+		if(obs_prob > 5)
+		{
+			if(!(occupied_list_[i].x < min_x_ || occupied_list_[i].x > max_x_ || occupied_list_[i].y < min_y_ || occupied_list_[i].y > max_y_))
+			{
+				placement_spot = (int) ((scan_to_publish_.angle_max + (round((std::atan2(occupied_list_[i].y, occupied_list_[i].x)) * pow(10, res_))) / pow(10, res_)) / scan_to_publish_.angle_increment) - 1;
+
+				if(placement_spot < scan_to_publish_.ranges.size())
+				{
+					scan_to_publish_.ranges[placement_spot] = occupied_list_[i].distance;
+					// scan_to_publish_.intensities[placement_spot] = obs_prob * 40; // Intensity scales up to 4000 approximately			
+				}
+				else
+					occupied_list_.erase(occupied_list_.begin() + i);
+			}
+		}
+	}
+}
+
 void LiveMapper::updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped)
 {
 	current_poly_ = *new_poly_stamped;
@@ -430,8 +535,4 @@ int main(int argc, char** argv)
 	ros::init(argc, argv, "live_mapper");
 
 	LiveMapper live_mapper;
-
-	// ros::spin();
-	
-	// return(0);
 }
