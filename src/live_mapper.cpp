@@ -11,29 +11,33 @@ LiveMapper::LiveMapper()
 	// These variables not used elsewhere in class...
 	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, robot_base_frame;
 
-	if(!nh_.param<std::string>("nav_3d/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
+	if(!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
-	if(!nh_.param<std::string>("nav_3d/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud") )
+	if(!nh_.param<std::string>("nav_3d/live_mapper/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud") )
 		ROS_WARN_STREAM("[Nav_3d] Failed to get planar cloud topic from parameter server - defaulting to " << planar_cloud_topic << ".");
-	nh_.param<std::string>("nav_3d/poly_topic", poly_topic, "nav_3d/robot_footprint");
-	nh_.param<std::string>("nav_3d/height_topic", height_topic, "nav_3d/robot_height");
-	nh_.param<std::string>("nav_3d/robot_base_frame", robot_base_frame, "base_footprint");
-	nh_.param<std::string>("nav_3d/obstacle_algorithm", alg_name_, "slope");
-	nh_.param<std::string>("nav_3d/map_registration", map_reg_, "map");
-	nh_.param<float>("nav_3d/robot_height_default", robot_height_default_, 1);
-	nh_.param<float>("nav_3d/floor_range", floor_range_, 0.1);
-	nh_.param<float>("nav_3d/min_obj_dist", min_obj_dist_, 0.0);
-	nh_.param<float>("nav_3d/max_robot_reach", max_robot_reach_, 1.0);
-	nh_.param<int>("nav_3d/res", res_, 3);
-	nh_.param<float>("nav_3d/map_res", map_res_, 0.05);
-	nh_.param<float>("nav_3d/slope_threshold", slope_threshold_, 3);
-	nh_.param<float>("nav_3d/drivable_height", drivable_height_, 0.1);
-	nh_.param<float>("nav_3d/stale_map_time", stale_map_time_, 10);
-	nh_.param<float>("nav_3d/obs_decay_time", obs_decay_time_, 90);
-	nh_.param<float>("nav_3d/pub_rate", pub_rate_, 100);
+	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/height_topic", height_topic, "nav_3d/robot_height");
+	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame, "base_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/obstacle_algorithm", alg_name_, "slope");
+	nh_.param<std::string>("nav_3d/live_mapper/map_registration", map_reg_, "map");
+	nh_.param<float>("nav_3d/live_mapper/robot_height_default", robot_height_default_, 1);
+	nh_.param<float>("nav_3d/live_mapper/floor_range", floor_range_, 0.1);
+	nh_.param<float>("nav_3d/live_mapper/min_obj_dist", min_obj_dist_, 0.0);
+	nh_.param<float>("nav_3d/live_mapper/max_robot_reach", max_robot_reach_, 1.0);
+	nh_.param<int>("nav_3d/live_mapper/scan_res", scan_res_, 3);
+	nh_.param<float>("nav_3d/live_mapper/map_res", map_res_, 0.05);
+	nh_.param<float>("nav_3d/live_mapper/slope_threshold", slope_threshold_, 3);
+	nh_.param<float>("nav_3d/live_mapper/drivable_height", drivable_height_, 0.1);
+	nh_.param<float>("nav_3d/live_mapper/stale_map_time", stale_map_time_, 10);
+	nh_.param<std::string>("nav_3d/live_mapper/obstacle_decay/type", obs_decay_type_, "exponential");
+	nh_.param<float>("nav_3d/live_mapper/obstacle_decay/time", obs_decay_time_, 90);
+	nh_.param<float>("nav_3d/live_mapper/loop_rate", loop_rate_, 100);
+
+	if(! (obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP" || obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN"))
+		ROS_ERROR_STREAM("[Nav_3d] Did not receive a valid obstacle decay type.  All obstacles will accumulate overtime and will never be removed from the map.");
 
 	// Subscribers
-	planar_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(planar_cloud_topic, 1, &LiveMapper::mapPublisher, this);
+	planar_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(planar_cloud_topic, 1, &LiveMapper::mainCallback, this);
 	poly_sub_ = nh_.subscribe<geometry_msgs::PolygonStamped>(poly_topic, 1, &LiveMapper::updatePoly, this);
 	height_sub_ = nh_.subscribe<geometry_msgs::Point32>(height_topic, 1, &LiveMapper::updateHeight, this);
 
@@ -62,17 +66,21 @@ LiveMapper::LiveMapper()
 	map_init_ = false;
 	robot_height_init_ = false;
 
+	ros::Rate loop_rate(loop_rate_);
+	ROS_INFO_STREAM("[Nav_3d] LiveMapper initialized successfully.");
+
 	while(ros::ok())
 		ros::spinOnce();
+		loop_rate.sleep();
 }
 
-void LiveMapper::mapPublisher(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud)
+void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud)
 {
 	if((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
 	{
 		map_to_publish_.header = planar_cloud->header;
 
-		// Initializing the map
+		// Initializing the map if the user wants to register the data in map form
 		if(!map_init_)
 		{
 			map_to_publish_.info.resolution = map_res_;
@@ -88,13 +96,13 @@ void LiveMapper::mapPublisher(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	{
 		scan_to_publish_.header = planar_cloud->header;
 
-		// Initializing the scan
+		// Initializing the scan if the user wants to register the data in scan form
 		if(!map_init_)
 		{
-			scan_to_publish_.angle_min = round(-3.141592653589793 * pow(10, res_))/pow(10, res_); // rounding to the res decimal place;
-			scan_to_publish_.angle_max = round(3.141592653589793 * pow(10, res_))/(pow(10, res_)); // rounding to the res decimal place;
-			scan_to_publish_.angle_increment = pow(10, -res_);
-			num_of_pts_ = (int) ((scan_to_publish_.angle_max - scan_to_publish_.angle_min) / scan_to_publish_.angle_increment); //((round(scan_to_publish_.angle_max * pow(10, res_)) / pow(10, res_) - round(scan_to_publish_.angle_min * pow(10, res_)) / pow(10, res_)) / (round(scan_to_publish_.angle_increment * pow(10, res_)) / pow(10, res_)));
+			scan_to_publish_.angle_min = round(-3.141592653589793 * pow(10, scan_res_))/pow(10, scan_res_); // rounding to the scan_res decimal place;
+			scan_to_publish_.angle_max = round(3.141592653589793 * pow(10, scan_res_))/(pow(10, scan_res_)); // rounding to the scan_res decimal place;
+			scan_to_publish_.angle_increment = pow(10, -scan_res_);
+			num_of_pts_ = (int) ((scan_to_publish_.angle_max - scan_to_publish_.angle_min) / scan_to_publish_.angle_increment); //((round(scan_to_publish_.angle_max * pow(10, scan_res_)) / pow(10, scan_res_) - round(scan_to_publish_.angle_min * pow(10, scan_res_)) / pow(10, scan_res_)) / (round(scan_to_publish_.angle_increment * pow(10, scan_res_)) / pow(10, scan_res_)));
 			scan_to_publish_.time_increment = 0;  // Unsure of this but it is likely not needed
 			scan_to_publish_.scan_time = 0;  // Unsure of this but it is likely not needed as well
 			scan_to_publish_.range_min = 0.01;
@@ -110,41 +118,22 @@ void LiveMapper::mapPublisher(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		}		
 	}
 
-
-	//If the polygon and the points being read are different frames we'll transform the polygon
-	if(current_poly_.header.frame_id != planar_cloud->header.frame_id)
-	{
-		geometry_msgs::PointStamped temp_poly_point;
-
-		for(int i=0; i<current_poly_.polygon.points.size(); i++)
-		{
-			temp_poly_point.header = current_poly_.header;
-			temp_poly_point.point.x = current_poly_.polygon.points[i].x;
-			temp_poly_point.point.y = current_poly_.polygon.points[i].y;
-			temp_poly_point.point.z = current_poly_.polygon.points[i].z;
-
-			listener_.transformPoint(planar_cloud->header.frame_id, temp_poly_point, temp_poly_point);
-			current_poly_.polygon.points[i].x = temp_poly_point.point.x;
-			current_poly_.polygon.points[i].y = temp_poly_point.point.y;
-			current_poly_.polygon.points[i].z = temp_poly_point.point.z;
-		}
-
-		current_poly_.header.frame_id = planar_cloud->header.frame_id;
-	}
-
-
 	if(!robot_height_init_)
 		ROS_WARN_THROTTLE(30, "The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f.", robot_height_default_);
-
+	
+	// If the polygon and the points being read are different frames we'll transform the polygon
+	if(current_poly_.header.frame_id != planar_cloud->header.frame_id)
+		this->convertPoly(planar_cloud->header);
+	
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if(alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method")
 		this->heightMethod(planar_cloud);
 	else if(alg_name_ == "slope" || alg_name_ == "Slope" || alg_name_ == "SLOPE" || alg_name_ == "slope_method" || alg_name_ == "slope method" || alg_name_ == "SLOPE METHOD" || alg_name_ == "Slope Method")
 	{
-	// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
-	// listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_, robot_base_point_);
+		// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
+		listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_, robot_base_point_);
 
-	this->slopeMethod(planar_cloud);
+		this->slopeMethod(planar_cloud);
 	}
 	else
 		ROS_ERROR_STREAM("[Nav_3d] Failed to receive an algorithm to run.  Cannot perform obstacle detection.");
@@ -170,14 +159,8 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	{
 		if(temp_cloud->points[i].z < current_robot_height_.z)
 		{
-			if(temp_cloud->points[i].x > max_x_)
-				max_x_ = temp_cloud->points[i].x;
-			if(temp_cloud->points[i].y > max_y_)
-				max_y_ = temp_cloud->points[i].y;
-			if(temp_cloud->points[i].x < min_x_)
-				min_x_ = temp_cloud->points[i].x;
-			if(temp_cloud->points[i].y < min_y_)
-				min_y_ = temp_cloud->points[i].y;
+			this->mapSizeMaintainer(temp_cloud->points[i]);
+
 
 			// This is how the height method determines what the ground is
 			if(!(temp_cloud->points[i].z > - floor_range_ && temp_cloud->points[i].z <  floor_range_))
@@ -207,12 +190,11 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 							new_obs_.push_back(temp_obs_point);
 						}						
 					}					
-
 				}
 				else
 				{
 					occupied_list_.push_back(temp_obs_point);
-					new_obs_.push_back(temp_obs_point);					
+					new_obs_.push_back(temp_obs_point);
 				}
 			}
 		}
@@ -241,7 +223,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 		mid_index = (temp_cloud->width - 1) / 2;
 		temp_cloud->points.erase(temp_cloud->points.begin() + mid_index);
 	}
-	// If it is even then we will just capture the mid_index for use later
+	// If it is even then we will just capture the mid_index for later use
 	else
 		mid_index = temp_cloud->width / 2;
 
@@ -251,35 +233,44 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	std::vector<point_XYZDTC> front_cloud(cloud_size / 2);
 	for(int i=0; i<mid_index; i++)
 	{
+		this->mapSizeMaintainer(temp_cloud->points[i]);
+
 		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
-		front_cloud[i].x = temp_cloud->points[i].x;// - robot_base_point_.point.x;
-		front_cloud[i].y = temp_cloud->points[i].y;// - robot_base_point_.point.y;
-		front_cloud[i].z = temp_cloud->points[i].z;// - robot_base_point_.point.z;
+		front_cloud[i].x = temp_cloud->points[i].x - robot_base_point_.point.x;
+		front_cloud[i].y = temp_cloud->points[i].y - robot_base_point_.point.y;
+		front_cloud[i].z = temp_cloud->points[i].z - robot_base_point_.point.z;
 		front_cloud[i].distance = sqrt(front_cloud[i].x * front_cloud[i].x + front_cloud[i].y * front_cloud[i].y);		
 		front_cloud[i].time_stamp = ros::Time::now();
 		front_cloud[i].count_stamp = i; // counter for sanity checks
 	}
 
 	// Adding an all zeros robot base point and then sorting the front cloud by distance
-	point_XYZDTC robot_base_point;
-	front_cloud.push_back(robot_base_point);
+	point_XYZDTC zero_base_point;
+	zero_base_point.x = 0;
+	zero_base_point.y = 0;
+	zero_base_point.z = 0;
+	zero_base_point.distance = 0;
+	zero_base_point.time_stamp = ros::Time::now();
+	front_cloud.push_back(zero_base_point);
 	std::sort(front_cloud.begin(), front_cloud.end(), compareDistance);
 
 	// Building the back half of the cloud for analysis
 	std::vector<point_XYZDTC> back_cloud(cloud_size / 2);
 	for(int i=0; i<mid_index; i++)
 	{
+		this->mapSizeMaintainer(temp_cloud->points[i + mid_index]);
+
 		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
-		back_cloud[i].x = temp_cloud->points[i + mid_index].x;// - robot_base_point_.point.x;
-		back_cloud[i].y = temp_cloud->points[i + mid_index].y;// - robot_base_point_.point.y;
-		back_cloud[i].z = temp_cloud->points[i + mid_index].z;// - robot_base_point_.point.z;
-		back_cloud[i].distance = sqrt(back_cloud[i].x * back_cloud[i].x + back_cloud[i].y * back_cloud[i].y);		
+		back_cloud[i].x = temp_cloud->points[i + mid_index].x - robot_base_point_.point.x;
+		back_cloud[i].y = temp_cloud->points[i + mid_index].y - robot_base_point_.point.y;
+		back_cloud[i].z = temp_cloud->points[i + mid_index].z - robot_base_point_.point.z;
+		back_cloud[i].distance = sqrt(back_cloud[i].x * back_cloud[i].x + back_cloud[i].y * back_cloud[i].y);
 		back_cloud[i].time_stamp = ros::Time::now();
 		back_cloud[i].count_stamp = i; // counter for sanity checks
 	}
 
 	// Adding an all zeros robot base point and then sorting the back cloud by distance
-	front_cloud.push_back(robot_base_point);
+	back_cloud.push_back(zero_base_point);
 	std::sort(back_cloud.begin(), back_cloud.end(), compareDistance);
 
 	// Perform the slope method calculation on the front cloud
@@ -290,15 +281,6 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	{
 		if(front_cloud[i].z < current_robot_height_.z && front_cloud[i].distance > min_obj_dist_)
 		{
-			if(front_cloud[i].x > max_x_)
-				max_x_ = front_cloud[i].x;
-			if(front_cloud[i].y > max_y_)
-				max_y_ = front_cloud[i].y;
-			if(front_cloud[i].x < min_x_)
-				min_x_ = front_cloud[i].x;
-			if(front_cloud[i].y < min_y_)
-				min_y_ = front_cloud[i].y;
-
 			float slope = (front_cloud[i].z - front_cloud[g].z) / (front_cloud[i].distance - front_cloud[g].distance);
 
 			if(fabs(slope) > slope_threshold_)
@@ -346,15 +328,6 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	{
 		if(back_cloud[i].z < current_robot_height_.z && back_cloud[i].distance > min_obj_dist_)
 		{
-			if(back_cloud[i].x > max_x_)
-				max_x_ = back_cloud[i].x;
-			if(back_cloud[i].y > max_y_)
-				max_y_ = back_cloud[i].y;
-			if(back_cloud[i].x < min_x_)
-				min_x_ = back_cloud[i].x;
-			if(back_cloud[i].y < min_y_)
-				min_y_ = back_cloud[i].y;
-
 			float slope = (back_cloud[i].z - back_cloud[g].z) / (back_cloud[i].distance - back_cloud[g].distance);
 
 			if(fabs(slope) > slope_threshold_)
@@ -401,7 +374,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 }
 
 // The Map Builder function contructs an OccupancyGrid map based on the class varibale occupied_list and new_obs.
-// New_obs is strictly the new vecotr of obstacle points that have been added in this most recent spin
+// New_obs is strictly the new vector of obstacle points that have been added in this most recent spin
 void LiveMapper::mapBuilder(const std::vector<point_XYZDTC> new_obs_)
 {
 	bool stale_map;
@@ -440,10 +413,12 @@ void LiveMapper::mapBuilder(const std::vector<point_XYZDTC> new_obs_)
 	{
 		for(int i=0; i<occupied_list_.size(); i++)
 		{
-			obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
-			// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
-			// obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
-			// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
+			if(obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP")
+				obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
+				// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
+			else if(obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN")
+				obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
+				// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
 			
 			// If the probability of an obstacle is greater than 5% we will build it into the map
 			if(obs_prob > 5)
@@ -482,34 +457,68 @@ void LiveMapper::mapBuilder(const std::vector<point_XYZDTC> new_obs_)
 	prev_map_build_time_ = ros::Time::now();
 }
 
+// The Scan Builder function contructs a feaux 2D laserscan based on the class varibale occupied_list.
 void LiveMapper::scanBuilder()
 {
 	int obs_prob, placement_spot;
 
 	for(int i=0; i<occupied_list_.size(); i++)
 	{
-		obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
-		// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
-		// obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
-		// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
+		if(obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP")
+			obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
+			// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
+		else if(obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN")
+			obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
+			// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
 		
 		// If the probability of an obstacle is greater than 5% we will build it into the map
 		if(obs_prob > 5)
 		{
 			if(!(occupied_list_[i].x < min_x_ || occupied_list_[i].x > max_x_ || occupied_list_[i].y < min_y_ || occupied_list_[i].y > max_y_))
 			{
-				placement_spot = (int) ((scan_to_publish_.angle_max + (round((std::atan2(occupied_list_[i].y, occupied_list_[i].x)) * pow(10, res_))) / pow(10, res_)) / scan_to_publish_.angle_increment) - 1;
-
+				placement_spot = (int) ((scan_to_publish_.angle_max + (round((std::atan2(occupied_list_[i].y, occupied_list_[i].x)) * pow(10, scan_res_))) / pow(10, scan_res_)) / scan_to_publish_.angle_increment) - 1;
 				if(placement_spot < scan_to_publish_.ranges.size())
 				{
 					scan_to_publish_.ranges[placement_spot] = occupied_list_[i].distance;
-					// scan_to_publish_.intensities[placement_spot] = obs_prob * 40; // Intensity scales up to 4000 approximately			
+					scan_to_publish_.intensities[placement_spot] = obs_prob * 40; // Intensity scales up to 4000 approximately			
 				}
 				else
 					occupied_list_.erase(occupied_list_.begin() + i);
 			}
 		}
 	}
+}
+
+void LiveMapper::mapSizeMaintainer(const pcl::PointXYZ point)
+{
+	if(point.x > max_x_)
+		max_x_ = point.x;
+	if(point.y > max_y_)
+		max_y_ = point.y;
+	if(point.x < min_x_)
+		min_x_ = point.x;
+	if(point.y < min_y_)
+		min_y_ = point.y;
+}
+
+void LiveMapper::convertPoly(const std_msgs::Header new_header)
+{
+	geometry_msgs::PointStamped temp_poly_point;
+
+	for(int i=0; i<current_poly_.polygon.points.size(); i++)
+	{
+		temp_poly_point.header = current_poly_.header;
+		temp_poly_point.point.x = current_poly_.polygon.points[i].x;
+		temp_poly_point.point.y = current_poly_.polygon.points[i].y;
+		temp_poly_point.point.z = current_poly_.polygon.points[i].z;
+
+		listener_.transformPoint(new_header.frame_id, temp_poly_point, temp_poly_point);
+		current_poly_.polygon.points[i].x = temp_poly_point.point.x;
+		current_poly_.polygon.points[i].y = temp_poly_point.point.y;
+		current_poly_.polygon.points[i].z = temp_poly_point.point.z;
+	}
+
+	current_poly_.header.frame_id = new_header.frame_id;
 }
 
 void LiveMapper::updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped)
@@ -532,7 +541,7 @@ bool LiveMapper::compareDistance(point_XYZDTC p1, point_XYZDTC p2)
 int main(int argc, char** argv)
 {
 	pcl::console::setVerbosityLevel(pcl::console::L_ALWAYS);	
-	ros::init(argc, argv, "live_mapper");
+	ros::init(argc, argv, "nav_3d/live_mapper");
 
 	LiveMapper live_mapper;
 }

@@ -1,19 +1,31 @@
 <?xml version="1.0"?>
 
 <launch>
-  <!-- Run the nav_3d node -->
-  <node name="nav_3d" pkg="nav_3d" type="nav_3d.py" output="screen" /> 
+  <!-- Loading the live mapper params from the yaml file -->
+  <rosparam command="load" file="$(find nav_3d)/param/live_mapper.yaml"/>
 
-  <!-- Run the cloud to laserscan node 
-  <node name="cloud_to_laserscan" pkg="nav_3d" type="cloud_to_laserscan.py" output="screen" /> -->
-
-  <!-- Run the robot height node 
-  <node name="robot_state" pkg="nav_3d" type="robot_state.py" output="screen" /> -->
-
-  <!-- This initiates the hokuyo lidar 
-  <include file="$(find urg_node)/launch/urg_lidar.launch" /> -->
-
-  <!-- Launch the imu transformer node which will take the um6 raw data and publish to imu/data 
-  <include file="$(find nav_3d)/launch/um6.launch" /> -->
+  <!-- Run the live mapper node -->
+  <node
+    name  = "live_mapper"
+    pkg   = "nav_3d"
+    type  = "live_mapper"
+    args  = ""
+    output= "screen"
+  >
+  </node>
     
+  <!-- Loading the robot state params from the yaml file -->
+  <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/>
+
+  <!-- Run the robot state node.  NOTE the parameter settings can be adjusted at the top of the 
+       source code in robot_state.py rather that in a yaml file as with cpp files.  
+  <node 
+    name="robot_state"
+    pkg="nav_3d"
+    type="robot_state.py"
+    args  = ""
+    output="screen"
+  >
+  </node>
+ -->
 </launch>

@@ -28,23 +28,23 @@ class RobotState:
 	It publishes the x,y,z coordinates of only the highest robot point
 	and a polygon for the footprint given all the links."""
 
-	# Adjustable settings
-	pub_rate = 1 # hz
-	ref_link = '/base_footprint' # the reference frame which will be considered as the origin of the robot on the ground
-	halo_radius = 0.25 # m
-	halo_density = 6 # no. of points in the halo buffer
-	hgt_pub_top = '~robot_height' # topic name to publish the robot height
-	ftprnt_pub_top = '~robot_footprint' # topic name to publish the robot footprint
-	frames_to_ignore = ['map', 'odom', 'left_ur5_tool0_controller', 'right_ur5_tool0_controller'] # This is a list of frames in the TF tree that you want to leave out of the robot footprint. NOTE: no leading slash here
-
-	#----------------------------------------------
-	# Protected Class Variables
-	_highest_point = Point32()
-	_highest_link = 'Not init'
-	_robot_footprint = PolygonStamped()
-	_robot_footprint.header.frame_id = ref_link
-
 	def __init__(self):
+		# Adjustable params from robot_state.yaml
+		self.ref_link = rospy.get_param("nav_3d/robot_state/robot_footprint_frame", "/base_footprint")
+		self.halo_radius = rospy.get_param("nav_3d/robot_state/halo_radius", 0.25)
+		self.halo_density = rospy.get_param("nav_3d/robot_state/halo_density", 5)
+		self.hgt_pub_top = rospy.get_param("nav_3d/robot_state/height_pub_topic", "~robot_height")
+		self.ftprnt_pub_top = rospy.get_param("nav_3d/robot_state/footprint_pub_topic", "~robot_footprint")
+		self.frames_to_ignore = rospy.get_param("nav_3d/robot_state/frames_to_ignore", ["map", "odom"])
+		self.loop_rate = rospy.get_param("nav_3d/robot_state/loop_rate", 1)
+
+		# Protected Class Variables
+		self._highest_point = Point32()
+		self._highest_link = 'Not init'
+		self._robot_footprint = PolygonStamped()
+		self._robot_footprint.header.frame_id = self.ref_link
+
+		# Publishers, subscribers and tf listener
 		self._pub_height = rospy.Publisher(self.hgt_pub_top, Point32, queue_size=1)
 		self._pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
 		self._tf_listener = tf.TransformListener()
@@ -100,8 +100,8 @@ class RobotState:
 		self._pub_height.publish(self._highest_point)
 		self._pub_footprint.publish(self._robot_footprint.polygon)
 
-		pub_rate = rospy.Rate(self.pub_rate)
-		pub_rate.sleep()
+		loop_rate = rospy.Rate(self.loop_rate)
+		loop_rate.sleep()
 
 
 
@@ -169,10 +169,10 @@ if __name__=='__main__':
 	try:
 		_RobotState = RobotState()
 
-		p_rate = rospy.Rate(_RobotState.pub_rate)
+		l_rate = rospy.Rate(_RobotState.loop_rate)
 		# This is the ros spinner
 		while not rospy.is_shutdown():
 			_RobotState.analyze_links()
-			p_rate.sleep()
+			l_rate.sleep()
 	except rospy.ROSInterruptException: 
 		pass

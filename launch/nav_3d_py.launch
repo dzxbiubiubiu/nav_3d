@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+
+<launch>
+  <!-- Run the nav_3d node -->
+  <node name="nav_3d" pkg="nav_3d" type="nav_3d.py" output="screen" /> 
+
+  <!-- Run the cloud to laserscan node 
+  <node name="cloud_to_laserscan" pkg="nav_3d" type="cloud_to_laserscan.py" output="screen" /> -->
+
+  <!-- Run the robot height node 
+  <node name="robot_state" pkg="nav_3d" type="robot_state.py" output="screen" /> -->
+
+  <!-- This initiates the hokuyo lidar 
+  <include file="$(find urg_node)/launch/urg_lidar.launch" /> -->
+
+  <!-- Launch the imu transformer node which will take the um6 raw data and publish to imu/data 
+  <include file="$(find nav_3d)/launch/um6.launch" /> -->
+    
+</launch>
