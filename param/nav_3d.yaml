@@ -10,10 +10,10 @@ nav_3d:
     robot_height_default:  1.0
     floor_range:  0.15
     min_obj_dist:  0.0
-    max_check_dist: 10.0
+    max_check_dist: 100.0
     max_robot_reach:  3.0
     scan_res:  3
-    map_res:  0.15
+    map_res:  0.10
     slope_threshold:  0.5
     drivable_height: 0.025
     stale_map_time:  10
@@ -21,3 +21,16 @@ nav_3d:
       # type: "exponential"
       # time:  90
     loop_rate: 25
+    visualization_tool:
+        active: true
+        pub_topic: "nav_3d/viz_cloud"
+        reset_timer: 10
+###  
+  robot_state:
+    robot_footprint_frame: "/base_footprint"
+    halo_radius: 0.25
+    halo_density: 6
+    height_pub_topic: "nav_3d/robot_height"
+    footprint_pub_topic: "nav_3d/robot_footprint"
+    frames_to_ignore: ["map", "odom", "left_ur5_tool0_controller", "right_ur5_tool0_controller"]
+    loop_rate: 1

@@ -2,7 +2,7 @@
 
 <launch>
   <!-- Loading the live mapper params from the yaml file -->
-  <rosparam command="load" file="$(find nav_3d)/param/live_mapper.yaml"/>
+  <rosparam command="load" file="$(find nav_3d)/param/nav_3d.yaml"/>
 
   <!-- Run the live mapper node -->
   <node
@@ -14,8 +14,17 @@
   >
   </node>
     
-  <!-- Loading the robot state params from the yaml file -->
-  <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/>
+  <!-- Loading the robot state params from the yaml file 
+  <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/> -->
+
+  <!-- Launching rviz with the nav_3d config file -->
+  <node
+    type ="rviz"
+    name ="rviz"
+    pkg  ="rviz"
+    args ="-d $(find nav_3d)/rviz/nav_3d.rviz"
+  >
+  </node>
 
   <!-- Run the robot state node.  NOTE the parameter settings can be adjusted at the top of the 
        source code in robot_state.py rather that in a yaml file as with cpp files.  
