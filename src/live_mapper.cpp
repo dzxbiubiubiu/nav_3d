@@ -28,14 +28,15 @@ LiveMapper::LiveMapper() {
 	nh_.param<float>("nav_3d/live_mapper/map_res", map_res_, 0.05);
 	nh_.param<float>("nav_3d/live_mapper/slope_threshold", slope_threshold_, 3);
 	nh_.param<float>("nav_3d/live_mapper/drivable_height", drivable_height_, 0.1);
+	nh_.param<float>("nav_3d/live_mapper/max_step_height", max_step_height_, 1.0);
 	nh_.param<float>("nav_3d/live_mapper/stale_map_time", stale_map_time_, 10);
 	nh_.param<float>("nav_3d/live_mapper/obstacle_decay_factor", obs_decay_factor_, 0.9);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_decay/type", obs_decay_type_, "exponential");
 	nh_.param<float>("nav_3d/live_mapper/obstacle_decay/time", obs_decay_time_, 90);
 	nh_.param<float>("nav_3d/live_mapper/loop_rate", loop_rate_, 40);
 	nh_.param<bool>("nav_3d/live_mapper/visualization_tool/active", viz_tool_, false);
-	nh_.param<std::string>("nav_3d/live_mapper/visualization_topic/pub_topic", viz_topic, "nav_3d/obs_cloud");
-	nh_.param<float>("nav_3d/live_mapper/visualization_topic/reset_timer", viz_timer_, 30.0);
+	nh_.param<std::string>("nav_3d/live_mapper/visualization_tool/pub_topic", viz_topic, "nav_3d/obs_cloud");
+	nh_.param<float>("nav_3d/live_mapper/visualization_tool/reset_timer", viz_timer_, 10.0);
 
 
 
@@ -109,17 +110,17 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 
 		prev_height_ = map_to_publish_.info.height;
 		prev_width_ = map_to_publish_.info.width;
-		prev_origin_x_ = map_to_publish_.info.origin.position.x;
-		prev_origin_y_ = map_to_publish_.info.origin.position.y;
-		prev_upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
-		prev_upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
-		prev_max_x_ = max_x_;
-		prev_max_y_ = max_y_;
-		prev_min_x_ = min_x_;
-		prev_min_y_ = min_y_;
+		// prev_origin_x_ = map_to_publish_.info.origin.position.x;
+		// prev_origin_y_ = map_to_publish_.info.origin.position.y;
+		// prev_upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
+		// prev_upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
+		// prev_max_x_ = max_x_;
+		// prev_max_y_ = max_y_;
+		// prev_min_x_ = min_x_;
+		// prev_min_y_ = min_y_;
 
 		prev_map_data_.clear();
-		for (int i=0; i<map_to_publish_.data.size(); i++) {
+		for (int i=0; i<map_to_publish_.data.size(); ++i) {
 			prev_map_data_.push_back(map_to_publish_.data[i]);
 		}
 
@@ -139,7 +140,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			map_init_ = true;
 			double inf = std::numeric_limits<double>::infinity();
 
-			for (int i=0; i<num_of_pts_; i++) {
+			for (int i=0; i<num_of_pts_; ++i) {
 				scan_to_publish_.ranges.push_back(inf);
 				scan_to_publish_.intensities.push_back(0);
 			}
@@ -190,7 +191,7 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	pcl::fromROSMsg(*planar_cloud, *temp_cloud);
 
 	point_XYZDTO checked_point;
-	for (int i=0; i<temp_cloud->points.size(); i++) {
+	for (int i=0; i<temp_cloud->points.size(); ++i) {
 		if (temp_cloud->points[i].z < current_robot_height_.z && (sqrt(temp_cloud->points[i].x * temp_cloud->points[i].x + temp_cloud->points[i].y * temp_cloud->points[i].y) > min_obj_dist_)) {
 			this->mapSizeMaintainer(temp_cloud->points[i]);
 			
@@ -263,7 +264,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 
 	// Building the front half of the cloud for analysis
 	std::vector<point_XYZDTO> front_cloud(cloud_size / 2);
-	for (int i=0; i<mid_index; i++) {
+	for (int i=0; i<mid_index; ++i) {
 		this->mapSizeMaintainer(temp_cloud->points[i]);
 
 		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
@@ -287,7 +288,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 
 	// Building the back half of the cloud for analysis
 	std::vector<point_XYZDTO> back_cloud(cloud_size / 2);
-	for (int i=0; i<mid_index; i++) {
+	for (int i=0; i<mid_index; ++i) {
 		this->mapSizeMaintainer(temp_cloud->points[i + mid_index]);
 
 		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
@@ -309,8 +310,9 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
 	// Perform the slope method calculation on the front cloud
 	// NOTE it is important that the first assumed ground point is at 0
 	// and we begin the first point to analyze at 1
+	float slope;
 	int g = 0;
-	for (int i=1; i<front_cloud.size(); i++) {
+	for (int i=1; i<front_cloud.size(); ++i) {
 		// /Ignore all points that are higher than the highest point in the robot
 		if (front_cloud[i].z < current_robot_height_.z && front_cloud[i].distance > min_obj_dist_) {
 
@@ -329,7 +331,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
             if ((!in_poly_) && ((front_cloud[i].distance - front_cloud[g].distance) < max_check_dist_)) {
 
                 // Slope calculation and check
-                float slope = (front_cloud[i].z - front_cloud[g].z) / (front_cloud[i].distance - front_cloud[g].distance);
+                slope = (front_cloud[i].z - front_cloud[g].z) / (front_cloud[i].distance - front_cloud[g].distance);
                 if (fabs(slope) > slope_threshold_) {
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
@@ -341,11 +343,14 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
                     	front_cloud[i].obstacle = 2;
                     }
 
+                // If the point has passed the slope test but is at a great height relative to the last ground point then we aren't sure it is the ground
+                } else if (fabs(front_cloud[i].z - front_cloud[g].z) > max_step_height_){
+                    front_cloud[i].obstacle = 3;
+
+                // If the point passes the slope and the height tests then the new furthest ground point is at the current index
                 } else {
-                    // The new furthest ground point is at the current index
                     g = i;
                 }
-
                 // Accumulating a vector of all the points that have been checked in this callback
                 points_checked_.push_back(front_cloud[i]);
             }
@@ -356,7 +361,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
     // NOTE it is important that the first assumed ground point is at 0
     // and we begin the first point to analyze at 1
     g = 0;
-    for (int i=1; i<back_cloud.size(); i++) {
+    for (int i=1; i<back_cloud.size(); ++i) {
         // /Ignore all points that are higher than the highest point in the robot
         if (back_cloud[i].z < current_robot_height_.z && back_cloud[i].distance > min_obj_dist_) {
 
@@ -375,7 +380,7 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
             if ((!in_poly_) && ((front_cloud[i].distance - front_cloud[g].distance) < max_check_dist_)){
  
                 // Slope calculation and check
-                float slope = (back_cloud[i].z - back_cloud[g].z) / (back_cloud[i].distance - back_cloud[g].distance);
+                slope = (back_cloud[i].z - back_cloud[g].z) / (back_cloud[i].distance - back_cloud[g].distance);
                 if (fabs(slope) > slope_threshold_) {
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
@@ -387,8 +392,12 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
                     	back_cloud[i].obstacle = 2;
                     }
 
+                // If the point has passed the slope test but is at a great height relative to the last ground point then we aren't sure it is the ground
+                } else if (fabs(back_cloud[i].z - back_cloud[g].z) > max_step_height_){
+                    back_cloud[i].obstacle = 3;
+
+                // If the point passes the slope and the height tests then the new furthest ground point is at the current index
                 } else {
-                    // The new furthest ground point is at the current index
                     g = i;
                 }
 
@@ -423,13 +432,13 @@ void LiveMapper::mapBuilder() {
 		if (!(dx_ == 0 && d_x_ == 0 && d_y_ == 0)) {
 			// Creating a new fresh map of all unknowns at the new bigger size.
 			map_to_publish_.data.clear();
-			for (int i=0; i<new_map_size; i++) {
+			for (int i=0; i<new_map_size; ++i) {
 				map_to_publish_.data.push_back(-1);
 			}
 
 			// Transfering the old data into the new map
 			int new_index;
-			for (int i=0; i<prev_map_data_.size(); i++) {
+			for (int i=0; i<prev_map_data_.size(); ++i) {
 				// Super smart indexing formula to shift the old data to the new fresh map
 				new_index = i + d_y_ * (map_to_publish_.info.width) + ((int)(i / prev_width_) + 1) * d_x_ + ((int)(i / prev_width_)) * dx_;
 
@@ -451,27 +460,32 @@ void LiveMapper::mapBuilder() {
 	cells_checked.clear();
 
 	// Running throught the new points that have been checked
-	for (int i=0; i<points_checked_.size(); i++) {
-		// Placement spots to determine where to put the data in the map
-		x_placement = (int) round((points_checked_[i].x - map_to_publish_.info.origin.position.x) / map_res_);
-		y_placement = (int) round((points_checked_[i].y - map_to_publish_.info.origin.position.y) / map_res_);
-		placement_spot = (y_placement) * map_to_publish_.info.width + x_placement;
+	for (int i=0; i<points_checked_.size(); ++i) {
 
-		// If the point checked is a new obstacle then set it to 99 on the map
-		if (points_checked_[i].obstacle == 1) {
-			map_to_publish_.data[placement_spot] = 99;
-			cells_checked.push_back(placement_spot);
-        // If the point checked is previously unknown and the point is not flagged as an obstacle then it will be assigned as a ground point
-		} else if (map_to_publish_.data[placement_spot] <= 0 && (! (points_checked_[i].obstacle == 1) )) {
-			map_to_publish_.data[placement_spot] = 0;
-        // do the obstacle decay 
-		} else {
-			// If the cell previously was occupied with an obstacle and has been checked and there has not been a new obstacle seen
-			// we will reduce the value of the probability that an obstacle is in that cell by multiplying the obstacle decay factor (< 1).
-			if (std::find(cells_checked.begin(), cells_checked.end(), placement_spot) == cells_checked.end()) {
-				map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * obs_decay_factor_;
+		// Only going to build in points that are definitely not an obstacle (0) or definitely an obstacle (1) into the map
+		if (points_checked_[i].obstacle < 2) {
+
+			// Placement spots to determine where to put the data in the map
+			x_placement = (int) round((points_checked_[i].x - map_to_publish_.info.origin.position.x) / map_res_);
+			y_placement = (int) round((points_checked_[i].y - map_to_publish_.info.origin.position.y) / map_res_);
+			placement_spot = (y_placement) * map_to_publish_.info.width + x_placement;
+
+			// If the point checked is a new obstacle then set it to 99 on the map
+			if (points_checked_[i].obstacle == 1) {
+				map_to_publish_.data[placement_spot] = 99;
 				cells_checked.push_back(placement_spot);
-			}
+	        // If the point checked is previously unknown and the point is not flagged as an obstacle then it will be assigned as a ground point
+			} else if (map_to_publish_.data[placement_spot] <= 0 && (! (points_checked_[i].obstacle == 1) )) {
+				map_to_publish_.data[placement_spot] = 0;
+	        // do the obstacle decay 
+			} else {
+				// If the cell previously was occupied with an obstacle and has been checked and there has not been a new obstacle seen
+				// we will reduce the value of the probability that an obstacle is in that cell by multiplying the obstacle decay factor (< 1).
+				if (std::find(cells_checked.begin(), cells_checked.end(), placement_spot) == cells_checked.end()) {
+					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * obs_decay_factor_;
+					cells_checked.push_back(placement_spot);
+				}
+			}			
 		}
 	}
 
@@ -482,7 +496,7 @@ void LiveMapper::mapBuilder() {
 void LiveMapper::scanBuilder() {
 	int obs_prob, placement_spot;
 
-	for (int i=0; i<occupied_list_.size(); i++) {
+	for (int i=0; i<occupied_list_.size(); ++i) {
 		if (obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP")
 			obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
 			// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
@@ -525,26 +539,26 @@ void LiveMapper::mapDiscretizer() {
 	// Increasing any necessary dimensions of the map so that it contains every point that has been measured
 	while (map_to_publish_.info.origin.position.x > min_x_) {
 		map_to_publish_.info.origin.position.x -= map_res_;
-        map_to_publish_.info.width++;
-        d_x_++;
+        ++map_to_publish_.info.width;
+        ++d_x_;
 	}
 	while (map_to_publish_.info.origin.position.y > min_y_) {
 		map_to_publish_.info.origin.position.y -= map_res_;
-        map_to_publish_.info.height++;
-        d_y_++;
+        ++map_to_publish_.info.height;
+        ++d_y_;
 	}
 
 	while ((map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_)) < max_x_) {
-		map_to_publish_.info.width++;
-        dx_++;
+		++map_to_publish_.info.width;
+        ++dx_;
 	}
 	while ((map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_)) < max_y_) {
-		map_to_publish_.info.height++;
-        dy_++;
+		++map_to_publish_.info.height;
+        ++dy_;
 	}
 
-	upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
-	upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
+	// upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
+	// upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
 
 	// ROS_INFO_STREAM("Width " << map_to_publish_.info.width << " Height " << map_to_publish_.info.height);
 
@@ -555,7 +569,7 @@ void LiveMapper::mapDiscretizer() {
 void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 	geometry_msgs::PointStamped temp_poly_point;
 
-	for (int i=0; i<current_poly_.polygon.points.size(); i++) {
+	for (int i=0; i<current_poly_.polygon.points.size(); ++i) {
 		temp_poly_point.header = current_poly_.header;
 		temp_poly_point.point.x = current_poly_.polygon.points[i].x;
 		temp_poly_point.point.y = current_poly_.polygon.points[i].y;
@@ -586,22 +600,46 @@ void LiveMapper::updateHeight(const geometry_msgs::Point32::ConstPtr& new_height
 }
 
 void LiveMapper::visualizationTool() {
-	// Timer or rotation check
-	
-	
 	pcl::PointXYZI point;
-	viz_cloud_.height = 1;
-	viz_cloud_.header.frame_id = "map";
+
+	// Timer or rotation check
+	if (prev_viz_pub_time_ == ros::Time(0)) {
+		
+		viz_cloud_.height = 1;
+		viz_cloud_.header.frame_id = "map";
+
+		// Initiating a point with the highest intesity value to maintain the color scale
+		point.x = 0;
+		point.y = 0;
+		point.z = 0;
+		point.intensity = 3;
+		++viz_cloud_.width;
+		viz_cloud_.points.push_back(point);
+
+	} else if (ros::Duration(ros::Time::now() - prev_viz_pub_time_).toSec() > viz_timer_) {
+
+		viz_cloud_.width = 0;
+		viz_cloud_.points.clear();
+
+		// Initiating a point with the highest intesity value to maintain the color scale
+		point.x = 0;
+		point.y = 0;
+		point.z = 0;
+		point.intensity = 3;
+		++viz_cloud_.width;
+		viz_cloud_.points.push_back(point);
+
+	}
 
 	// Adding points to the viz cloud
-	for (int i=0; i<points_checked_.size(); i++) {
-		viz_cloud_.width++;
+	for (int i=0; i<points_checked_.size(); ++i) {
+		++viz_cloud_.width;
 		
 		// intensity_val = points_checked_[i].obstacle * 100.0 / 1.1;
 		point.x = points_checked_[i].x;
 		point.y = points_checked_[i].y;
 		point.z = points_checked_[i].z;
-		point.intensity = points_checked_[i].obstacle * 1000;
+		point.intensity = points_checked_[i].obstacle;
 
 		
 		viz_cloud_.points.push_back(point);
@@ -609,6 +647,8 @@ void LiveMapper::visualizationTool() {
 
 	pcl::toROSMsg(viz_cloud_, viz_cloud_pub_);
 	viz_pub_.publish(viz_cloud_pub_);
+
+	prev_viz_pub_time_ = ros::Time::now();
 }
 
 

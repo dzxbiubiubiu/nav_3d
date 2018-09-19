@@ -42,7 +42,7 @@ private:
 		float z;
 		float distance;
 		ros::Time time_stamp;
-		int obstacle; // Defined point state.  0 = Not an obstacle, 1 = Obstacle, 2 = Likely Drivable (unsure)
+		int obstacle; // Defined point state.  0 = Not an obstacle, 1 = Obstacle, 2 = Likely Drivable (unsure), 3 = Too far away and too high/low (unsure)
 	};
 
 	//Varibles that will be set via yaml file
@@ -53,6 +53,7 @@ private:
 	int scan_res_;
 	float map_res_;
 	float drivable_height_;
+	float max_step_height_;
 	float min_obj_dist_;
 	float max_check_dist_;
 	float max_robot_reach_;
@@ -110,6 +111,7 @@ private:
 	// Visualization tool variables
 	bool viz_tool_;
 	float viz_timer_;
+	ros::Time prev_viz_pub_time_;
 	pcl::PointCloud<pcl::PointXYZI> viz_cloud_;
 	sensor_msgs::PointCloud2 viz_cloud_pub_;
 
