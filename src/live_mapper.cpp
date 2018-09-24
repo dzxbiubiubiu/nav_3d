@@ -17,6 +17,7 @@ LiveMapper::LiveMapper() {
 	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint");
 	nh_.param<std::string>("nav_3d/live_mapper/height_topic", height_topic, "nav_3d/robot_height");
 	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame, "base_footprint");
+	nh_.param<int>("nav_3d/live_mapper/lidar_configuration", lidar_config_, 1);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/live_mapper/map_registration", map_reg_, "map");
 	nh_.param<float>("nav_3d/live_mapper/robot_height_default", robot_height_default_, 1);
@@ -154,9 +155,19 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	if (current_poly_.header.frame_id != planar_cloud->header.frame_id)
 		this->convertPoly(planar_cloud->header);
 	
+	// Converting the planar cloud into a XYZ cloud before running any algorithms
+	pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+	pcl::fromROSMsg(*planar_cloud, *pcl_cloud);
+
+
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if (alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method") {
-		this->heightMethod(planar_cloud);
+		points_checked_.clear();
+		this->heightMethod(pcl_cloud);
+
+		// Since we have the new size of the map we can assign proper cell values to each point in cloud
+		this->mapDiscretizer();
+
 	} else if (alg_name_ == "slope" || alg_name_ == "Slope" || alg_name_ == "SLOPE" || alg_name_ == "slope_method" || alg_name_ == "slope method" || alg_name_ == "SLOPE METHOD" || alg_name_ == "Slope Method") {
 		// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
 		try {
@@ -167,47 +178,58 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			// ROS_ERROR_STREAM("[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
 		}
 
-		this->slopeMethod(planar_cloud);
+		// Before slope method we have to parse the raw cloud understanding the lidar config
+		this->cloudParser(pcl_cloud);
+
+		// Since we have the new size of the map we can assign proper cell values to each point in cloud
+		this->mapDiscretizer();
+
+		points_checked_.clear();
+		this->slopeMethod(pcl_cloud);
 	} else {
 		ROS_ERROR_STREAM("[Nav_3d] Failed to receive an algorithm to run.  Cannot perform obstacle detection. Check the yaml algorithm entry to ensure it is typed correctly.");
 	}
 
+	// Build the map now
+	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+		this->mapBuilder();
+	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+		this->scanBuilder();
+
+	// Publish
 	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
 		map_pub_.publish(map_to_publish_);
 	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
 		map_pub_.publish(scan_to_publish_);
 
+	// Visualize data in point cloud form if viz tool is set to active
 	if (viz_tool_)
 		this->visualizationTool();
 }
 
-void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud) {
+void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
 	geometry_msgs::PointStamped cloud_point;
-	cloud_point.header = planar_cloud->header;
-	points_checked_.clear();
+	// cloud_point.header.stamp = planar_cloud->header.stamp;
+	cloud_point.header.frame_id = planar_cloud->header.frame_id;
 	
-	// Converting the planar cloud into a XYZ cloud
-	pcl::PointCloud<pcl::PointXYZI>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-	pcl::fromROSMsg(*planar_cloud, *temp_cloud);
-
 	point_XYZDTO checked_point;
-	for (int i=0; i<temp_cloud->points.size(); ++i) {
-		if (temp_cloud->points[i].z < current_robot_height_.z && (sqrt(temp_cloud->points[i].x * temp_cloud->points[i].x + temp_cloud->points[i].y * temp_cloud->points[i].y) > min_obj_dist_)) {
-			this->mapSizeMaintainer(temp_cloud->points[i]);
+	for (int i=0; i<planar_cloud->points.size(); ++i) {
+		if (planar_cloud->points[i].z < current_robot_height_.z && (sqrt(planar_cloud->points[i].x * planar_cloud->points[i].x + planar_cloud->points[i].y * planar_cloud->points[i].y) > min_obj_dist_)) {
+			this->mapSizeMaintainer(planar_cloud->points[i]);
 			
-			checked_point.x = temp_cloud->points[i].x;
-			checked_point.y = temp_cloud->points[i].y;
-			checked_point.z = temp_cloud->points[i].z;
+			checked_point.x = planar_cloud->points[i].x;
+			checked_point.y = planar_cloud->points[i].y;
+			checked_point.z = planar_cloud->points[i].z;
 			checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 			checked_point.time_stamp = ros::Time::now();
 			checked_point.obstacle = 0;
 			
 			// This is how the height method determines what the ground is
-			if (!(temp_cloud->points[i].z > - floor_range_ && temp_cloud->points[i].z <  floor_range_)) {
+			if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {
 		
 				if (poly_init_) {
-					cloud_point.point.x = temp_cloud->points[i].x;
-					cloud_point.point.y = temp_cloud->points[i].y;
+					cloud_point.point.x = planar_cloud->points[i].x;
+					cloud_point.point.y = planar_cloud->points[i].y;
 
 					// Check to see if the points is within the robot
 					// This is made efficient by first checking to make sure the point is within the robot possible max reach
@@ -229,98 +251,27 @@ void LiveMapper::heightMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_c
             points_checked_.push_back(checked_point);
 		}
 	}
-
-	this->mapDiscretizer();
-
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
-		this->mapBuilder();
-	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
-		this->scanBuilder();
-
-	if (viz_tool_)
-		this->visualizationTool();
 }
 
-void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud) {
+void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
 	geometry_msgs::PointStamped cloud_point;
-	cloud_point.header = planar_cloud->header;
-	points_checked_.clear();
-	
-	// Converting the planar cloud into a XYZ cloud
-	pcl::PointCloud<pcl::PointXYZI>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-	pcl::fromROSMsg(*planar_cloud, *temp_cloud);
-
-	int mid_index;
-	// If the size of the point vector is odd we will throw out the middle point
-	if (temp_cloud->width % 2 != 0) {
-		mid_index = (temp_cloud->width - 1) / 2;
-		temp_cloud->points.erase(temp_cloud->points.begin() + mid_index);
-	} else {
-		// If it is even then we will just capture the mid_index for later use
-		mid_index = temp_cloud->width / 2;
-	}
-
-	int cloud_size = temp_cloud->points.size();
-
-	// Building the front half of the cloud for analysis
-	std::vector<point_XYZDTO> front_cloud(cloud_size / 2);
-	for (int i=0; i<mid_index; ++i) {
-		this->mapSizeMaintainer(temp_cloud->points[i]);
-
-		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
-		front_cloud[i].x = temp_cloud->points[i].x - robot_base_point_.point.x;
-		front_cloud[i].y = temp_cloud->points[i].y - robot_base_point_.point.y;
-		front_cloud[i].z = temp_cloud->points[i].z - robot_base_point_.point.z;
-		front_cloud[i].distance = sqrt(front_cloud[i].x * front_cloud[i].x + front_cloud[i].y * front_cloud[i].y);		
-		front_cloud[i].time_stamp = ros::Time::now();
-		front_cloud[i].obstacle = 0;
-	}
-
-	// Adding an all zeros robot base point and then sorting the front cloud by distance
-	point_XYZDTO zero_base_point;
-	zero_base_point.x = 0;
-	zero_base_point.y = 0;
-	zero_base_point.z = 0;
-	zero_base_point.distance = 0;
-	zero_base_point.time_stamp = ros::Time::now();
-	front_cloud.push_back(zero_base_point);
-	std::sort(front_cloud.begin(), front_cloud.end(), compareDistance);
-
-	// Building the back half of the cloud for analysis
-	std::vector<point_XYZDTO> back_cloud(cloud_size / 2);
-	for (int i=0; i<mid_index; ++i) {
-		this->mapSizeMaintainer(temp_cloud->points[i + mid_index]);
-
-		// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
-		back_cloud[i].x = temp_cloud->points[i + mid_index].x - robot_base_point_.point.x;
-		back_cloud[i].y = temp_cloud->points[i + mid_index].y - robot_base_point_.point.y;
-		back_cloud[i].z = temp_cloud->points[i + mid_index].z - robot_base_point_.point.z;
-		back_cloud[i].distance = sqrt(back_cloud[i].x * back_cloud[i].x + back_cloud[i].y * back_cloud[i].y);
-		back_cloud[i].time_stamp = ros::Time::now();
-		back_cloud[i].obstacle = 0;
-	}
-
-	// Adding an all zeros robot base point and then sorting the back cloud by distance
-	back_cloud.push_back(zero_base_point);
-	std::sort(back_cloud.begin(), back_cloud.end(), compareDistance);
-
-	// Since we have the new size of the map we can assign proper cell values to each point in cloud
-	this->mapDiscretizer();
+	// cloud_point.header.stamp = planar_cloud->header.stamp;
+	cloud_point.header.frame_id = planar_cloud->header.frame_id;
 
 	// Perform the slope method calculation on the front cloud
 	// NOTE it is important that the first assumed ground point is at 0
 	// and we begin the first point to analyze at 1
 	float slope;
 	int g = 0;
-	for (int i=1; i<front_cloud.size(); ++i) {
+	for (int i=1; i<front_cloud_.size(); ++i) {
 		// /Ignore all points that are higher than the highest point in the robot
-		if (front_cloud[i].z < current_robot_height_.z && front_cloud[i].distance > min_obj_dist_) {
+		if (front_cloud_[i].z < current_robot_height_.z && front_cloud_[i].distance > min_obj_dist_) {
 
             // Check to see if the point is within the robot footprint
             // This is made efficient by first checking to make sure the point is within the robot possible max reach
-            if (poly_init_ && front_cloud[i].distance < max_robot_reach_) {
-                cloud_point.point.x = front_cloud[i].x;
-                cloud_point.point.y = front_cloud[i].y;
+            if (poly_init_ && front_cloud_[i].distance < max_robot_reach_) {
+                cloud_point.point.x = front_cloud_[i].x;
+                cloud_point.point.y = front_cloud_[i].y;
                 in_poly_ = point_in_poly(current_poly_, cloud_point);
             } else {
                 // Even if the polygon is not initialized 
@@ -328,89 +279,173 @@ void LiveMapper::slopeMethod(const sensor_msgs::PointCloud2::ConstPtr& planar_cl
             }
 
             // If the point is not inside the polygon then we are going to check to see if it is an obstacle point
-            if ((!in_poly_) && ((front_cloud[i].distance - front_cloud[g].distance) < max_check_dist_)) {
+            if ((!in_poly_) && ((front_cloud_[i].distance - front_cloud_[g].distance) < max_check_dist_)) {
 
                 // Slope calculation and check
-                slope = (front_cloud[i].z - front_cloud[g].z) / (front_cloud[i].distance - front_cloud[g].distance);
+                slope = (front_cloud_[i].z - front_cloud_[g].z) / (front_cloud_[i].distance - front_cloud_[g].distance);
                 if (fabs(slope) > slope_threshold_) {
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
-                    if (fabs(front_cloud[i].z - front_cloud[g].z) > drivable_height_) {
-                        front_cloud[i].obstacle = 1;
-                        occupied_list_.push_back(front_cloud[i]);
+                    if (fabs(front_cloud_[i].z - front_cloud_[g].z) > drivable_height_) {
+                        front_cloud_[i].obstacle = 1;
+                        occupied_list_.push_back(front_cloud_[i]);
                     } else {
                     	// Likely drivable point
-                    	front_cloud[i].obstacle = 2;
+                    	front_cloud_[i].obstacle = 2;
                     }
 
                 // If the point has passed the slope test but is at a great height relative to the last ground point then we aren't sure it is the ground
-                } else if (fabs(front_cloud[i].z - front_cloud[g].z) > max_step_height_){
-                    front_cloud[i].obstacle = 3;
+                } else if (fabs(front_cloud_[i].z - front_cloud_[g].z) > max_step_height_){
+                    front_cloud_[i].obstacle = 3;
 
                 // If the point passes the slope and the height tests then the new furthest ground point is at the current index
                 } else {
                     g = i;
                 }
                 // Accumulating a vector of all the points that have been checked in this callback
-                points_checked_.push_back(front_cloud[i]);
+                points_checked_.push_back(front_cloud_[i]);
             }
 		}
 	}
 
-    // Perform the slope method calculation on the front cloud
-    // NOTE it is important that the first assumed ground point is at 0
-    // and we begin the first point to analyze at 1
-    g = 0;
-    for (int i=1; i<back_cloud.size(); ++i) {
-        // /Ignore all points that are higher than the highest point in the robot
-        if (back_cloud[i].z < current_robot_height_.z && back_cloud[i].distance > min_obj_dist_) {
+	// Perform the slope method calculation on the front cloud
+	// NOTE it is important that the first assumed ground point is at 0
+	// and we begin the first point to analyze at 1
+	g = 0;
+	for (int i=1; i<back_cloud_.size(); ++i) {
+		// /Ignore all points that are higher than the highest point in the robot
+		if (back_cloud_[i].z < current_robot_height_.z && back_cloud_[i].distance > min_obj_dist_) {
 
             // Check to see if the point is within the robot footprint
             // This is made efficient by first checking to make sure the point is within the robot possible max reach
-            if (poly_init_ && back_cloud[i].distance < max_robot_reach_) {
-                cloud_point.point.x = back_cloud[i].x;
-                cloud_point.point.y = back_cloud[i].y;
-                in_poly_ = point_in_poly(current_poly_, cloud_point);   
+            if (poly_init_ && back_cloud_[i].distance < max_robot_reach_) {
+                cloud_point.point.x = back_cloud_[i].x;
+                cloud_point.point.y = back_cloud_[i].y;
+                in_poly_ = point_in_poly(current_poly_, cloud_point);
             } else {
-                // Even if the polygon is not initialized we will check every point assuming this is false
+                // Even if the polygon is not initialized 
                 in_poly_ = false;
             }
 
             // If the point is not inside the polygon then we are going to check to see if it is an obstacle point
-            if ((!in_poly_) && ((front_cloud[i].distance - front_cloud[g].distance) < max_check_dist_)){
- 
+            if ((!in_poly_) && ((back_cloud_[i].distance - back_cloud_[g].distance) < max_check_dist_)) {
+
                 // Slope calculation and check
-                slope = (back_cloud[i].z - back_cloud[g].z) / (back_cloud[i].distance - back_cloud[g].distance);
+                slope = (back_cloud_[i].z - back_cloud_[g].z) / (back_cloud_[i].distance - back_cloud_[g].distance);
                 if (fabs(slope) > slope_threshold_) {
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
-                    if (fabs(back_cloud[i].z - back_cloud[g].z) > drivable_height_) {
-                        back_cloud[i].obstacle = 1;
-                        occupied_list_.push_back(back_cloud[i]);
+                    if (fabs(back_cloud_[i].z - back_cloud_[g].z) > drivable_height_) {
+                        back_cloud_[i].obstacle = 1;
+                        occupied_list_.push_back(back_cloud_[i]);
                     } else {
                     	// Likely drivable point
-                    	back_cloud[i].obstacle = 2;
+                    	back_cloud_[i].obstacle = 2;
                     }
 
                 // If the point has passed the slope test but is at a great height relative to the last ground point then we aren't sure it is the ground
-                } else if (fabs(back_cloud[i].z - back_cloud[g].z) > max_step_height_){
-                    back_cloud[i].obstacle = 3;
+                } else if (fabs(back_cloud_[i].z - back_cloud_[g].z) > max_step_height_){
+                    back_cloud_[i].obstacle = 3;
 
                 // If the point passes the slope and the height tests then the new furthest ground point is at the current index
                 } else {
                     g = i;
                 }
-
                 // Accumulating a vector of all the points that have been checked in this callback
-                points_checked_.push_back(back_cloud[i]);              
+                points_checked_.push_back(back_cloud_[i]);
             }
-        }
-    }
+		}
+	}
+}
 
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
-		this->mapBuilder();
-	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
-		this->scanBuilder();
+void LiveMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
+	front_cloud_.clear();
+	back_cloud_.clear();
+
+	// Lidar pointed upward in which you get front and back clouds
+	if (lidar_config_ == 1) {
+		int mid_index, mid_index_2;
+		// If the size of the point vector is odd we will capture the two points that strattle the middle
+		if (planar_cloud->width % 2 != 0) {
+			mid_index = (planar_cloud->width - 1) / 2;
+			mid_index_2 = (planar_cloud->width + 1) / 2;
+		} else {
+			// If it is even then we will just capture the mid_index for later use
+			mid_index = mid_index_2 = planar_cloud->width / 2;
+		}
+
+		// Building the front half of the cloud for analysis
+		front_cloud_.resize(mid_index);
+		for (int i=0; i<mid_index; ++i) {
+			this->mapSizeMaintainer(planar_cloud->points[i]);
+
+			// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
+			front_cloud_[i].x = planar_cloud->points[i].x - robot_base_point_.point.x;
+			front_cloud_[i].y = planar_cloud->points[i].y - robot_base_point_.point.y;
+			front_cloud_[i].z = planar_cloud->points[i].z - robot_base_point_.point.z;
+			front_cloud_[i].distance = sqrt(front_cloud_[i].x * front_cloud_[i].x + front_cloud_[i].y * front_cloud_[i].y);		
+			front_cloud_[i].time_stamp = ros::Time::now();
+			front_cloud_[i].obstacle = 0;
+		}
+
+		// Adding an all zeros robot base point and then sorting the front cloud by distance
+		point_XYZDTO zero_base_point;
+		zero_base_point.x = 0;
+		zero_base_point.y = 0;
+		zero_base_point.z = 0;
+		zero_base_point.distance = 0;
+		zero_base_point.time_stamp = ros::Time::now();
+		front_cloud_.push_back(zero_base_point);
+		std::sort(front_cloud_.begin(), front_cloud_.end(), compareDistance);
+
+		// Building the back half of the cloud for analysis
+		back_cloud_.resize(mid_index);
+		for (int i=0; i<mid_index; ++i) {
+			this->mapSizeMaintainer(planar_cloud->points[i + mid_index_2]);
+
+			// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
+			back_cloud_[i].x = planar_cloud->points[i + mid_index_2].x - robot_base_point_.point.x;
+			back_cloud_[i].y = planar_cloud->points[i + mid_index_2].y - robot_base_point_.point.y;
+			back_cloud_[i].z = planar_cloud->points[i + mid_index_2].z - robot_base_point_.point.z;
+			back_cloud_[i].distance = sqrt(back_cloud_[i].x * back_cloud_[i].x + back_cloud_[i].y * back_cloud_[i].y);
+			back_cloud_[i].time_stamp = ros::Time::now();
+			back_cloud_[i].obstacle = 0;
+		}
+
+		// Adding an all zeros robot base point and then sorting the back cloud by distance
+		back_cloud_.push_back(zero_base_point);
+		std::sort(back_cloud_.begin(), back_cloud_.end(), compareDistance);
+
+	// Lidar pointed forward only getting a front cloud
+	} else if (lidar_config_ == 2) {
+		int cloud_size = planar_cloud->points.size();
+		// Building the front half of the cloud for analysis
+		std::vector<point_XYZDTO> front_cloud_(cloud_size);
+		for (int i=0; i<cloud_size; ++i) {
+			this->mapSizeMaintainer(planar_cloud->points[i]);
+
+			// Need to subtract the xyz coordinates of the robot_base_frame to tranlate it into the robot_base_frame
+			front_cloud_[i].x = planar_cloud->points[i].x - robot_base_point_.point.x;
+			front_cloud_[i].y = planar_cloud->points[i].y - robot_base_point_.point.y;
+			front_cloud_[i].z = planar_cloud->points[i].z - robot_base_point_.point.z;
+			front_cloud_[i].distance = sqrt(front_cloud_[i].x * front_cloud_[i].x + front_cloud_[i].y * front_cloud_[i].y);		
+			front_cloud_[i].time_stamp = ros::Time::now();
+			front_cloud_[i].obstacle = 0;
+		}
+
+		// Adding an all zeros robot base point and then sorting the front cloud by distance
+		point_XYZDTO zero_base_point;
+		zero_base_point.x = 0;
+		zero_base_point.y = 0;
+		zero_base_point.z = 0;
+		zero_base_point.distance = 0;
+		zero_base_point.time_stamp = ros::Time::now();
+		front_cloud_.push_back(zero_base_point);
+		std::sort(front_cloud_.begin(), front_cloud_.end(), compareDistance);
+	
+	} else if (lidar_config_ == 3) {
+		// Reserved for 3D lidars
+	}
 }
 
 // The Map Builder function contructs an OccupancyGrid map based on the class varibale occupied_list and new_obs.
