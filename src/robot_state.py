@@ -47,6 +47,7 @@ class RobotState:
 		# Publishers, subscribers and tf listener
 		self._pub_height = rospy.Publisher(self.hgt_pub_top, Point32, queue_size=1)
 		self._pub_footprint = rospy.Publisher(self.ftprnt_pub_top, Polygon, queue_size=1)
+		self._pub_footprint_stamped = rospy.Publisher( (self.ftprnt_pub_top + "_stamped"), PolygonStamped, queue_size=1)
 		self._tf_listener = tf.TransformListener()
 
 	def analyze_links(self):
@@ -99,6 +100,7 @@ class RobotState:
 		
 		self._pub_height.publish(self._highest_point)
 		self._pub_footprint.publish(self._robot_footprint.polygon)
+		self._pub_footprint_stamped.publish(self._robot_footprint)
 
 		loop_rate = rospy.Rate(self.loop_rate)
 		loop_rate.sleep()

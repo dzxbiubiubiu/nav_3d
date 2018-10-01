@@ -2,9 +2,9 @@ nav_3d:
   live_mapper:
     map_pub_topic:  "nav_3d/live_map"
     planar_cloud_topic:  "laser_stitcher/planar_cloud"
-    poly_topic:  "nav_3d/robot_footprint"
+    poly_topic:  "nav_3d/robot_footprint_stamped"
     height_topic:  "nav_3d/robot_height"
-    robot_base_frame:  "base_footprint"
+    robot_base_frame:  "/base_footprint"
     lidar_configuration: 1
     obstacle_algorithm:  "slope"
     map_registration:  "map"
