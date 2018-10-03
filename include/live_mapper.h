@@ -51,7 +51,7 @@ private:
 
 	//Robot footprint variables
 	geometry_msgs::PolygonStamped current_poly_;
-	geometry_msgs::PointStamped robot_base_point_;
+	geometry_msgs::PointStamped robot_base_point_, robot_base_point_tfd_;
 	bool poly_init_, in_poly_;
 
 	//Robot height variables

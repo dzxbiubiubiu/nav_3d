@@ -72,6 +72,12 @@ LiveMapper::LiveMapper() {
 	robot_base_point_.point.y = 0;
 	robot_base_point_.point.z = 0;
 
+	robot_base_point_tfd_.header.frame_id = robot_base_frame;
+	robot_base_point_tfd_.header.stamp = ros::Time(0); // Setting to time 0 to allow it to be transformed by tf
+	robot_base_point_tfd_.point.x = 0;
+	robot_base_point_tfd_.point.y = 0;
+	robot_base_point_tfd_.point.z = 0;
+
 	// Initializing
 	poly_init_ = false;
 	map_init_ = false;
@@ -171,7 +177,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	} else if (alg_name_ == "slope" || alg_name_ == "Slope" || alg_name_ == "SLOPE" || alg_name_ == "slope_method" || alg_name_ == "slope method" || alg_name_ == "SLOPE METHOD" || alg_name_ == "Slope Method") {
 		// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
 		try {
-			listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_, robot_base_point_);
+			listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_tfd_, robot_base_point_);
 		} catch (const tf::TransformException& e) {
 			robot_base_point_.header.stamp = ros::Time::now(); // Base point could not be transformed so let's ensure it has the correct time stamp
 			ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
@@ -255,8 +261,10 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& p
 
 void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
 	geometry_msgs::PointStamped cloud_point;
-	// cloud_point.header.stamp = planar_cloud->header.stamp;
 	cloud_point.header.frame_id = planar_cloud->header.frame_id;
+
+	// Need to create a local checked point variable which will be in the map reference frame and sent to the map builder
+	point_XYZDTO checked_point;	
 
 	// Perform the slope method calculation on the front cloud
 	// NOTE it is important that the first assumed ground point is at 0
@@ -303,7 +311,12 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
                     g = i;
                 }
                 // Accumulating a vector of all the points that have been checked in this callback
-                points_checked_.push_back(front_cloud_[i]);
+                // Need to translate point back into the map frame first
+				checked_point.x = front_cloud_[i].x + robot_base_point_.point.x;
+				checked_point.y = front_cloud_[i].y + robot_base_point_.point.y;
+				checked_point.z = front_cloud_[i].z + robot_base_point_.point.z;
+				checked_point.obstacle = front_cloud_[i].obstacle;
+                points_checked_.push_back(checked_point);
             }
 		}
 	}
@@ -352,7 +365,11 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
                     g = i;
                 }
                 // Accumulating a vector of all the points that have been checked in this callback
-                points_checked_.push_back(back_cloud_[i]);
+				checked_point.x = back_cloud_[i].x + robot_base_point_.point.x;
+				checked_point.y = back_cloud_[i].y + robot_base_point_.point.y;
+				checked_point.z = back_cloud_[i].z + robot_base_point_.point.z;
+				checked_point.obstacle = back_cloud_[i].obstacle;
+                points_checked_.push_back(checked_point);
             }
 		}
 	}
