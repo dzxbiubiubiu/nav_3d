@@ -197,16 +197,19 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	}
 
 	// Build the map now
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		this->mapBuilder();
-	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+	} else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		this->scanBuilder();
+	}
 
 	// Publish
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		map_pub_.publish(map_to_publish_);
-	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
+	} else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		map_pub_.publish(scan_to_publish_);
+	}
+
 
 	// Visualize data in point cloud form if viz tool is set to active
 	if (viz_tool_)
