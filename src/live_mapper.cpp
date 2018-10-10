@@ -30,6 +30,7 @@ LiveMapper::LiveMapper() {
 	nh_.param<float>("nav_3d/live_mapper/slope_threshold", slope_threshold_, 3);
 	nh_.param<float>("nav_3d/live_mapper/drivable_height", drivable_height_, 0.1);
 	nh_.param<float>("nav_3d/live_mapper/max_step_height", max_step_height_, 1.0);
+	nh_.param<float>("nav_3d/live_mapper/max_ditch_depth", max_ditch_depth_, 1.0);
 	nh_.param<float>("nav_3d/live_mapper/stale_map_time", stale_map_time_, 10);
 	nh_.param<float>("nav_3d/live_mapper/obstacle_decay_factor", obs_decay_factor_, 0.9);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_decay/type", obs_decay_type_, "exponential");
@@ -276,7 +277,7 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
 	int g = 0;
 	for (int i=1; i<front_cloud_.size(); ++i) {
 		// /Ignore all points that are higher than the highest point in the robot
-		if (front_cloud_[i].z < current_robot_height_.z && front_cloud_[i].distance > min_obj_dist_) {
+		if (front_cloud_[i].z < current_robot_height_.z && front_cloud_[i].z > -max_ditch_depth_ && front_cloud_[i].distance > min_obj_dist_) {
 
             // Check to see if the point is within the robot footprint
             // This is made efficient by first checking to make sure the point is within the robot possible max reach
@@ -330,7 +331,7 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
 	g = 0;
 	for (int i=1; i<back_cloud_.size(); ++i) {
 		// /Ignore all points that are higher than the highest point in the robot
-		if (back_cloud_[i].z < current_robot_height_.z && back_cloud_[i].distance > min_obj_dist_) {
+		if (back_cloud_[i].z < current_robot_height_.z && back_cloud_[i].z > -max_ditch_depth_ && back_cloud_[i].distance > min_obj_dist_) {
 
             // Check to see if the point is within the robot footprint
             // This is made efficient by first checking to make sure the point is within the robot possible max reach

@@ -46,7 +46,8 @@ private:
 	int lidar_config_, scan_res_;
 	std::string alg_name_, map_reg_, obs_decay_type_;
 	float robot_height_default_, floor_range_, slope_threshold_, drivable_height_, max_step_height_, min_obj_dist_, 
-		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_, viz_timer_;
+		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_,
+		max_ditch_depth_, viz_timer_;
 	bool viz_tool_;
 
 	//Robot footprint variables
