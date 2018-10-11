@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+
+<launch>
+    
+  <!-- Loading the robot state params from the yaml file -->
+  <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/> 
+
+  <!-- Run the robot state node.  NOTE the parameter settings can be adjusted at the top of the 
+       source code in robot_state.py rather that in a yaml file as with cpp files.  -->
+  <node 
+    name="robot_state"
+    pkg="nav_3d"
+    type="robot_state.py"
+    args  = ""
+    output="screen"
+  >
+  </node>
+ 
+</launch>

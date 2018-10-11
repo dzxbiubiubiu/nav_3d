@@ -31,6 +31,7 @@ private:
 	ros::Subscriber poly_sub_;
 	ros::Subscriber height_sub_;
 	ros::Publisher map_pub_;
+	ros::Publisher scan_pub_;
 	ros::Publisher viz_pub_;
 	tf::TransformListener listener_;
 
@@ -79,7 +80,7 @@ private:
 
 	ros::Time start_time_;
 	ros::Time prev_map_build_time_;
-	bool map_init_;
+	bool map_init_, scan_init_;
 
 
 	// Visualization tool variables
@@ -90,12 +91,12 @@ private:
 
 	//Callbacks
 	void mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud);
-	void heightMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr&  planar_cloud);
-	void slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud);
-	void cloudParser(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud);
+	void heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr&  planar_cloud);
+	void slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud);
+	void cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud);
 	void mapBuilder();
 	void scanBuilder();
-	void mapSizeMaintainer(const pcl::PointXYZI point);
+	void mapSizeMaintainer(const pcl::PointXYZ point);
 	void mapDiscretizer();
 	void convertPoly(const std_msgs::Header new_header);
 	void updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped);

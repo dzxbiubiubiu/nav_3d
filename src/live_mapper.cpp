@@ -8,10 +8,12 @@
 
 LiveMapper::LiveMapper() {
 	// These variables not used elsewhere in class...
-	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, robot_base_frame, viz_topic;
+	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, robot_base_frame, viz_topic;
 
 	if (!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
+		if (!nh_.param<std::string>("nav_3d/live_mapper/scan_pub_topic", scan_pub_topic, "nav_3d/live_scan"))
+		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << scan_pub_topic << ".");
 	if (!nh_.param<std::string>("nav_3d/live_mapper/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get planar cloud topic from parameter server - defaulting to " << planar_cloud_topic << ".");
 	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint");
@@ -51,12 +53,15 @@ LiveMapper::LiveMapper() {
 	height_sub_ = nh_.subscribe<geometry_msgs::Point32>(height_topic, 1, &LiveMapper::updateHeight, this);
 
 	// Publishers (publish a occgrid if map output or laserscan if scan output)
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP"))
+	// if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>(map_pub_topic, 1, this);
-	else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN"))
-		map_pub_ = nh_.advertise<sensor_msgs::LaserScan>(map_pub_topic, 1, this);
-	else
-		ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
+	// }
+	// else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
+		scan_pub_ = nh_.advertise<sensor_msgs::LaserScan>(scan_pub_topic, 1, this);
+	// }
+	// else {
+		// ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
+	// }
 
 	if (viz_tool_)
 		viz_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(viz_topic, 1, this);
@@ -82,6 +87,7 @@ LiveMapper::LiveMapper() {
 	// Initializing
 	poly_init_ = false;
 	map_init_ = false;
+	scan_init_ = false;
 	robot_height_init_ = false;
 
 	ros::Rate loop_rate(loop_rate_);
@@ -94,7 +100,7 @@ LiveMapper::LiveMapper() {
 }
 
 void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud) {
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
+	// if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		map_to_publish_.header = planar_cloud->header;
 
 		// Initializing the map if the user wants to register the data in map form
@@ -132,11 +138,11 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			prev_map_data_.push_back(map_to_publish_.data[i]);
 		}
 
-	} else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
+	// } else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		scan_to_publish_.header = planar_cloud->header;
 
 		// Initializing the scan if the user wants to register the data in scan form
-		if (!map_init_) {
+		if (!scan_init_) {
 			scan_to_publish_.angle_min = round(-3.141592653589793 * pow(10, scan_res_))/pow(10, scan_res_); // rounding to the scan_res decimal place;
 			scan_to_publish_.angle_max = round(3.141592653589793 * pow(10, scan_res_))/(pow(10, scan_res_)); // rounding to the scan_res decimal place;
 			scan_to_publish_.angle_increment = pow(10, -scan_res_);
@@ -145,7 +151,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			scan_to_publish_.scan_time = 0;  // Unsure of this but it is likely not needed as well
 			scan_to_publish_.range_min = 0.01;
 			scan_to_publish_.range_max = 30.0;
-			map_init_ = true;
+			scan_init_ = true;
 			double inf = std::numeric_limits<double>::infinity();
 
 			for (int i=0; i<num_of_pts_; ++i) {
@@ -153,7 +159,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 				scan_to_publish_.intensities.push_back(0);
 			}
 		}
-	}
+	// }
 
 	if (!robot_height_init_)
 		ROS_WARN_THROTTLE(30, "The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f.", robot_height_default_);
@@ -163,7 +169,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		this->convertPoly(planar_cloud->header);
 	
 	// Converting the planar cloud into a XYZ cloud before running any algorithms
-	pcl::PointCloud<pcl::PointXYZI>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::fromROSMsg(*planar_cloud, *pcl_cloud);
 
 
@@ -198,18 +204,18 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	}
 
 	// Build the map now
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
+	// if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		this->mapBuilder();
-	} else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
+	// } else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		this->scanBuilder();
-	}
+	// }
 
 	// Publish
-	if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
+	// if ((map_reg_ == "map") || (map_reg_ == "Map") || (map_reg_ == "MAP")) {
 		map_pub_.publish(map_to_publish_);
-	} else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
-		map_pub_.publish(scan_to_publish_);
-	}
+	// } else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
+		scan_pub_.publish(scan_to_publish_);
+	// }
 
 
 	// Visualize data in point cloud form if viz tool is set to active
@@ -217,40 +223,41 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		this->visualizationTool();
 }
 
-void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
+void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
 	geometry_msgs::PointStamped cloud_point;
+	float local_distance;
 	// cloud_point.header.stamp = planar_cloud->header.stamp;
 	cloud_point.header.frame_id = planar_cloud->header.frame_id;
-	
+
+
 	point_XYZDTO checked_point;
 	for (int i=0; i<planar_cloud->points.size(); ++i) {
-		if (planar_cloud->points[i].z < current_robot_height_.z && (sqrt(planar_cloud->points[i].x * planar_cloud->points[i].x + planar_cloud->points[i].y * planar_cloud->points[i].y) > min_obj_dist_)) {
+		if (planar_cloud->points[i].z < current_robot_height_.z && (sqrt(planar_cloud->points[i].x * planar_cloud->points[i].x + planar_cloud->points[i].y * planar_cloud->points[i].y) > min_obj_dist_) && planar_cloud->points[i].z > -max_ditch_depth_) {
 			this->mapSizeMaintainer(planar_cloud->points[i]);
 			
 			checked_point.x = planar_cloud->points[i].x;
 			checked_point.y = planar_cloud->points[i].y;
-			checked_point.z = planar_cloud->points[i].z;
+			checked_point.z = planar_cloud->points[i].z - robot_base_point_.point.z;
 			checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 			checked_point.time_stamp = ros::Time::now();
 			checked_point.obstacle = 0;
 			
 			// This is how the height method determines what the ground is
 			if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {
-		
-				if (poly_init_) {
+				
+				local_distance = sqrt((checked_point.x - robot_base_point_.point.x) * (checked_point.x - robot_base_point_.point.x) + (checked_point.y - robot_base_point_.point.y) * (checked_point.y - robot_base_point_.point.y));	
+				if (poly_init_ && local_distance < max_robot_reach_) {
 					cloud_point.point.x = planar_cloud->points[i].x;
 					cloud_point.point.y = planar_cloud->points[i].y;
 
 					// Check to see if the points is within the robot
 					// This is made efficient by first checking to make sure the point is within the robot possible max reach
-					if (checked_point.distance < max_robot_reach_) {
-						in_poly_ = point_in_poly(current_poly_, cloud_point);
+					in_poly_ = point_in_poly(current_poly_, cloud_point);
 
-						// If the point is not in the polygon then we build it in as an obstacle					
-						if (!in_poly_) {
-							checked_point.obstacle = 1;
-							occupied_list_.push_back(checked_point);
-						}
+					// If the point is not in the polygon then we build it in as an obstacle					
+					if (!in_poly_) {
+						checked_point.obstacle = 1;
+						occupied_list_.push_back(checked_point);
 					}
 				} else {
 					checked_point.obstacle = 1;
@@ -263,7 +270,7 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& p
 	}
 }
 
-void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
+void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
 	geometry_msgs::PointStamped cloud_point;
 	cloud_point.header.frame_id = planar_cloud->header.frame_id;
 
@@ -300,7 +307,6 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
                     if (fabs(front_cloud_[i].z - front_cloud_[g].z) > drivable_height_) {
                         front_cloud_[i].obstacle = 1;
-                        occupied_list_.push_back(front_cloud_[i]);
                     } else {
                     	// Likely drivable point
                     	front_cloud_[i].obstacle = 2;
@@ -319,8 +325,15 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
 				checked_point.x = front_cloud_[i].x + robot_base_point_.point.x;
 				checked_point.y = front_cloud_[i].y + robot_base_point_.point.y;
 				checked_point.z = front_cloud_[i].z + robot_base_point_.point.z;
+				checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 				checked_point.obstacle = front_cloud_[i].obstacle;
+				checked_point.time_stamp = ros::Time::now();
                 points_checked_.push_back(checked_point);
+                
+                if(checked_point.obstacle == 1) {
+                	occupied_list_.push_back(checked_point);
+                }
+
             }
 		}
 	}
@@ -354,7 +367,6 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
                     if (fabs(back_cloud_[i].z - back_cloud_[g].z) > drivable_height_) {
                         back_cloud_[i].obstacle = 1;
-                        occupied_list_.push_back(back_cloud_[i]);
                     } else {
                     	// Likely drivable point
                     	back_cloud_[i].obstacle = 2;
@@ -372,14 +384,20 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
 				checked_point.x = back_cloud_[i].x + robot_base_point_.point.x;
 				checked_point.y = back_cloud_[i].y + robot_base_point_.point.y;
 				checked_point.z = back_cloud_[i].z + robot_base_point_.point.z;
+				checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 				checked_point.obstacle = back_cloud_[i].obstacle;
+				checked_point.time_stamp = ros::Time::now();
                 points_checked_.push_back(checked_point);
+
+                if(checked_point.obstacle == 1) {
+                	occupied_list_.push_back(checked_point);
+                }
             }
 		}
 	}
 }
 
-void LiveMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& planar_cloud) {
+void LiveMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
 	front_cloud_.clear();
 	back_cloud_.clear();
 
@@ -441,7 +459,7 @@ void LiveMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZI>::ConstPtr& pl
 	} else if (lidar_config_ == 2) {
 		int cloud_size = planar_cloud->points.size();
 		// Building the front half of the cloud for analysis
-		std::vector<point_XYZDTO> front_cloud_(cloud_size);
+		front_cloud_.resize(cloud_size);
 		for (int i=0; i<cloud_size; ++i) {
 			this->mapSizeMaintainer(planar_cloud->points[i]);
 
@@ -575,7 +593,7 @@ void LiveMapper::scanBuilder() {
 	}
 }
 
-void LiveMapper::mapSizeMaintainer(const pcl::PointXYZI point) {
+void LiveMapper::mapSizeMaintainer(const pcl::PointXYZ point) {
 	if(point.x > max_x_)
 		max_x_ = point.x + 5 * map_res_;
 	if(point.y > max_y_)
@@ -615,8 +633,6 @@ void LiveMapper::mapDiscretizer() {
 
 	// upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
 	// upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
-
-	// ROS_INFO_STREAM("Width " << map_to_publish_.info.width << " Height " << map_to_publish_.info.height);
 
 	// Checking to see if the size of the map has changed.  No need to refill an entire new map if it is the same size
 	map_dim_change_ = (prev_width_ != map_to_publish_.info.width) || (prev_height_ != map_to_publish_.info.height);

@@ -17,17 +17,17 @@
   <!-- Loading the robot state params from the yaml file 
   <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/> -->
 
-  <!-- Launching rviz with the nav_3d config file -->
+  <!-- Launching rviz with the nav_3d config file 
   <node
     type ="rviz"
     name ="rviz"
     pkg  ="rviz"
     args ="-d $(find nav_3d)/rviz/nav_3d.rviz"
   >
-  </node>
+  </node>-->
 
   <!-- Run the robot state node.  NOTE the parameter settings can be adjusted at the top of the 
-       source code in robot_state.py rather that in a yaml file as with cpp files.  
+       source code in robot_state.py rather that in a yaml file as with cpp files.  -->
   <node 
     name="robot_state"
     pkg="nav_3d"
@@ -36,5 +36,5 @@
     output="screen"
   >
   </node>
- -->
+ 
 </launch>

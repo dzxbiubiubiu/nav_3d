@@ -1,8 +1,8 @@
 nav_3d:
   robot_state:
     robot_footprint_frame: "/base_footprint"
-    halo_radius: 0.25
-    halo_density: 6
+    halo_radius: 0.4
+    halo_density: 10
     height_pub_topic: "nav_3d/robot_height"
     footprint_pub_topic: "nav_3d/robot_footprint"
     frames_to_ignore: ["map", "odom", "left_ur5_tool0_controller", "right_ur5_tool0_controller"]
