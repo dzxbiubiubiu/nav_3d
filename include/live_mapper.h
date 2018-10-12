@@ -40,7 +40,7 @@ private:
 	{
 		float x, y, z, distance;
 		ros::Time time_stamp;
-		int obstacle; // Defined point state.  0 = Not an obstacle, 1 = Obstacle, 2 = Likely Drivable (unsure), 3 = Too far away and too high/low (unsure)
+		int obstacle; // Defined point state.  0 = Not an obstacle, 1 = Obstacle, 2 = Likely Drivable (unsure), 3 = Too far away and too high/low (unsure), 4 = Height Warning
 	};
 
 	//Varibles that will be set via yaml file
@@ -48,7 +48,7 @@ private:
 	std::string alg_name_, map_reg_, obs_decay_type_;
 	float robot_height_default_, floor_range_, slope_threshold_, drivable_height_, max_step_height_, min_obj_dist_, 
 		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_,
-		max_ditch_depth_, viz_timer_;
+		max_ditch_depth_, viz_timer_, robot_height_buffer_, robot_height_warning_;
 	bool viz_tool_;
 
 	//Robot footprint variables

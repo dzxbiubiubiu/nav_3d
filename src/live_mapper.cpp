@@ -23,6 +23,8 @@ LiveMapper::LiveMapper() {
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/live_mapper/map_registration", map_reg_, "map");
 	nh_.param<float>("nav_3d/live_mapper/robot_height_default", robot_height_default_, 1);
+	nh_.param<float>("nav_3d/live_mapper/robot_height_buffer", robot_height_buffer_, 0.1);
+	nh_.param<float>("nav_3d/live_mapper/robot_height_warning", robot_height_warning_, 0.25);
 	nh_.param<float>("nav_3d/live_mapper/floor_range", floor_range_, 0.1);
 	nh_.param<float>("nav_3d/live_mapper/min_obj_dist", min_obj_dist_, 0.0);
     nh_.param<float>("nav_3d/live_mapper/max_check_dist", max_check_dist_, 2.0);
@@ -71,7 +73,7 @@ LiveMapper::LiveMapper() {
 	prev_map_build_time_ = ros::Time(0);
 
 	// Defaulting the robot height. It will be updated to the true value via updateHeight
-	current_robot_height_.z = robot_height_default_;
+	current_robot_height_.z = robot_height_default_ + robot_height_buffer_ + robot_height_warning_;
 	robot_base_point_.header.frame_id = robot_base_frame;
 	robot_base_point_.header.stamp = ros::Time(0); // Setting to time 0 to allow it to be transformed by tf
 	robot_base_point_.point.x = 0;
@@ -256,11 +258,25 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 
 					// If the point is not in the polygon then we build it in as an obstacle					
 					if (!in_poly_) {
-						checked_point.obstacle = 1;
+						
+						// If the height is in the warning zone we will label it as such
+						if(checked_point.z > current_robot_height_.z - robot_height_warning_) {
+							checked_point.obstacle = 4;
+						} else {
+							checked_point.obstacle = 1;
+						}
+
 						occupied_list_.push_back(checked_point);
 					}
 				} else {
-					checked_point.obstacle = 1;
+
+					// If the height is in the warning zone we will label it as such
+					if(checked_point.z > current_robot_height_.z - robot_height_warning_) {
+						checked_point.obstacle = 4;
+					} else {
+						checked_point.obstacle = 1;
+					}
+
 					occupied_list_.push_back(checked_point);
 				}
 			}
@@ -306,7 +322,14 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pla
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
                     if (fabs(front_cloud_[i].z - front_cloud_[g].z) > drivable_height_) {
-                        front_cloud_[i].obstacle = 1;
+						
+						// If the height is in the warning zone and the point is defintely an obstacle we will label it as such
+						if(front_cloud_[i].z > current_robot_height_.z - robot_height_warning_) {
+							front_cloud_[i].obstacle = 4;
+						} else {
+							front_cloud_[i].obstacle = 1;
+						}
+
                     } else {
                     	// Likely drivable point
                     	front_cloud_[i].obstacle = 2;
@@ -366,7 +389,14 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pla
 
                     // If the point is flagged by having a sharp slope it can still be in the likely drivable region if it is within the drivable height
                     if (fabs(back_cloud_[i].z - back_cloud_[g].z) > drivable_height_) {
-                        back_cloud_[i].obstacle = 1;
+
+						// If the height is in the warning zone and the point is defintely an obstacle we will label it as such
+						if(back_cloud_[i].z > current_robot_height_.z - robot_height_warning_) {
+							back_cloud_[i].obstacle = 4;
+						} else {
+							back_cloud_[i].obstacle = 1;
+						}
+
                     } else {
                     	// Likely drivable point
                     	back_cloud_[i].obstacle = 2;
@@ -595,13 +625,13 @@ void LiveMapper::scanBuilder() {
 
 void LiveMapper::mapSizeMaintainer(const pcl::PointXYZ point) {
 	if(point.x > max_x_)
-		max_x_ = point.x + 5 * map_res_;
+		max_x_ = point.x + 5 *map_res_;
 	if(point.y > max_y_)
 		max_y_ = point.y + 5 *map_res_;
 	if(point.x < min_x_)
 		min_x_ = point.x - 5 *map_res_;
 	if(point.y < min_y_)
-		min_y_ = point.y - 5 * map_res_;
+		min_y_ = point.y - 5 *map_res_;
 }
 
 void LiveMapper::mapDiscretizer() {
@@ -684,7 +714,7 @@ void LiveMapper::visualizationTool() {
 		point.x = 0;
 		point.y = 0;
 		point.z = 0;
-		point.intensity = 3;
+		point.intensity = 4;
 		++viz_cloud_.width;
 		viz_cloud_.points.push_back(point);
 
@@ -697,7 +727,7 @@ void LiveMapper::visualizationTool() {
 		point.x = 0;
 		point.y = 0;
 		point.z = 0;
-		point.intensity = 3;
+		point.intensity = 4;
 		++viz_cloud_.width;
 		viz_cloud_.points.push_back(point);
 
