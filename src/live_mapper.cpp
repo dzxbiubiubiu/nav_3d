@@ -8,7 +8,7 @@
 
 LiveMapper::LiveMapper() {
 	// These variables not used elsewhere in class...
-	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, robot_base_frame, viz_topic;
+	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, viz_topic;
 
 	if (!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
@@ -16,9 +16,9 @@ LiveMapper::LiveMapper() {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << scan_pub_topic << ".");
 	if (!nh_.param<std::string>("nav_3d/live_mapper/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud"))
 		ROS_WARN_STREAM("[Nav_3d] Failed to get planar cloud topic from parameter server - defaulting to " << planar_cloud_topic << ".");
-	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint_stamped");
 	nh_.param<std::string>("nav_3d/live_mapper/height_topic", height_topic, "nav_3d/robot_height");
-	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame, "base_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame_, "base_footprint");
 	nh_.param<int>("nav_3d/live_mapper/lidar_configuration", lidar_config_, 1);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/live_mapper/map_registration", map_reg_, "map");
@@ -74,13 +74,13 @@ LiveMapper::LiveMapper() {
 
 	// Defaulting the robot height. It will be updated to the true value via updateHeight
 	current_robot_height_.z = robot_height_default_ + robot_height_buffer_ + robot_height_warning_;
-	robot_base_point_.header.frame_id = robot_base_frame;
+	robot_base_point_.header.frame_id = robot_base_frame_;
 	robot_base_point_.header.stamp = ros::Time(0); // Setting to time 0 to allow it to be transformed by tf
 	robot_base_point_.point.x = 0;
 	robot_base_point_.point.y = 0;
 	robot_base_point_.point.z = 0;
 
-	robot_base_point_tfd_.header.frame_id = robot_base_frame;
+	robot_base_point_tfd_.header.frame_id = robot_base_frame_;
 	robot_base_point_tfd_.header.stamp = ros::Time(0); // Setting to time 0 to allow it to be transformed by tf
 	robot_base_point_tfd_.point.x = 0;
 	robot_base_point_tfd_.point.y = 0;
@@ -166,9 +166,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	if (!robot_height_init_)
 		ROS_WARN_THROTTLE(30, "The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f.", robot_height_default_);
 	
-	// If the polygon and the points being read are different frames we'll transform the polygon
-	if (current_poly_.header.frame_id != planar_cloud->header.frame_id)
-		this->convertPoly(planar_cloud->header);
+
 	
 	// Converting the planar cloud into a XYZ cloud before running any algorithms
 	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -178,12 +176,26 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if (alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method") {
 		points_checked_.clear();
+
+		// If the polygon and the points being read are different frames we'll transform the polygon
+		if (current_poly_.header.frame_id != planar_cloud->header.frame_id)
+			this->convertPoly(planar_cloud->header);
+
 		this->heightMethod(pcl_cloud);
 
 		// Since we have the new size of the map we can assign proper cell values to each point in cloud
 		this->mapDiscretizer();
 
 	} else if (alg_name_ == "slope" || alg_name_ == "Slope" || alg_name_ == "SLOPE" || alg_name_ == "slope_method" || alg_name_ == "slope method" || alg_name_ == "SLOPE METHOD" || alg_name_ == "Slope Method") {
+
+		// If the polygon and the points being read are different frames we'll transform the polygon
+		if (current_poly_.header.frame_id != robot_base_frame_) {
+			std_msgs::Header header;
+			header.frame_id = robot_base_frame_;
+			header.stamp = ros::Time::now();
+			this->convertPoly(header);
+		}
+
 		// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
 		try {
 			listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_tfd_, robot_base_point_);
@@ -193,6 +205,8 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			// ROS_ERROR_STREAM("[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
 		}
 
+
+
 		// Before slope method we have to parse the raw cloud understanding the lidar config
 		this->cloudParser(pcl_cloud);
 
@@ -200,7 +214,7 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		this->mapDiscretizer();
 
 		points_checked_.clear();
-		this->slopeMethod(pcl_cloud);
+		this->slopeMethod();
 	} else {
 		ROS_ERROR_STREAM("[Nav_3d] Failed to receive an algorithm to run.  Cannot perform obstacle detection. Check the yaml algorithm entry to ensure it is typed correctly.");
 	}
@@ -286,9 +300,11 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 	}
 }
 
-void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
+void LiveMapper::slopeMethod() {
 	geometry_msgs::PointStamped cloud_point;
-	cloud_point.header.frame_id = planar_cloud->header.frame_id;
+
+	// Since cloud parser translated front and back cloud to robot_base_frame the cloud point we need to check is in that same frame and not the planar_cloud frame
+	cloud_point.header.frame_id = robot_base_frame_;
 
 	// Need to create a local checked point variable which will be in the map reference frame and sent to the map builder
 	point_XYZDTO checked_point;	
@@ -304,9 +320,10 @@ void LiveMapper::slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pla
 
             // Check to see if the point is within the robot footprint
             // This is made efficient by first checking to make sure the point is within the robot possible max reach
-            if (poly_init_ && front_cloud_[i].distance < max_robot_reach_) {
+            if (poly_init_ && front_cloud_[i].distance < max_robot_reach_) {	
                 cloud_point.point.x = front_cloud_[i].x;
                 cloud_point.point.y = front_cloud_[i].y;
+                
                 in_poly_ = point_in_poly(current_poly_, cloud_point);
             } else {
                 // Even if the polygon is not initialized 
@@ -669,15 +686,15 @@ void LiveMapper::mapDiscretizer() {
 }
 
 void LiveMapper::convertPoly(const std_msgs::Header new_header) {
-	geometry_msgs::PointStamped temp_poly_point;
+	geometry_msgs::PointStamped temp_poly_point, temp_poly_point_tfd;
 
 	for (int i=0; i<current_poly_.polygon.points.size(); ++i) {
-		temp_poly_point.header = current_poly_.header;
-		temp_poly_point.point.x = current_poly_.polygon.points[i].x;
-		temp_poly_point.point.y = current_poly_.polygon.points[i].y;
-		temp_poly_point.point.z = current_poly_.polygon.points[i].z;
+		temp_poly_point.header = temp_poly_point_tfd.header = current_poly_.header;
+		temp_poly_point.point.x = temp_poly_point_tfd.point.x = current_poly_.polygon.points[i].x;
+		temp_poly_point.point.y = temp_poly_point_tfd.point.y = current_poly_.polygon.points[i].y;
+		temp_poly_point.point.z = temp_poly_point_tfd.point.z = current_poly_.polygon.points[i].z;
 		try {
-			listener_.transformPoint(new_header.frame_id, temp_poly_point, temp_poly_point);
+			listener_.transformPoint(new_header.frame_id, temp_poly_point_tfd, temp_poly_point);
 			
 			current_poly_.polygon.points[i].x = temp_poly_point.point.x;
 			current_poly_.polygon.points[i].y = temp_poly_point.point.y;

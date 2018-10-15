@@ -45,7 +45,7 @@ private:
 
 	//Varibles that will be set via yaml file
 	int lidar_config_, scan_res_;
-	std::string alg_name_, map_reg_, obs_decay_type_;
+	std::string alg_name_, map_reg_, obs_decay_type_, robot_base_frame_;
 	float robot_height_default_, floor_range_, slope_threshold_, drivable_height_, max_step_height_, min_obj_dist_, 
 		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_,
 		max_ditch_depth_, viz_timer_, robot_height_buffer_, robot_height_warning_;
@@ -92,7 +92,7 @@ private:
 	//Callbacks
 	void mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_cloud);
 	void heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr&  planar_cloud);
-	void slopeMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud);
+	void slopeMethod();
 	void cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud);
 	void mapBuilder();
 	void scanBuilder();
