@@ -203,6 +203,14 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::fromROSMsg(*planar_cloud, *pcl_cloud);
 
+	// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud
+	try {
+		listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_tfd_, robot_base_point_);
+	} catch (const tf::TransformException& e) {
+		robot_base_point_.header.stamp = ros::Time::now(); // Base point could not be transformed so let's ensure it has the correct time stamp
+		ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known and neither method will be able to sift out points from the robot polygon. If this error persists you might want to use height method for obstacle detection.");
+		// ROS_ERROR_STREAM("[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
+	}
 
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if (alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method") {
@@ -226,17 +234,6 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 			header.stamp = ros::Time::now();
 			this->convertPoly(header);
 		}
-
-		// Transforming the robot_base_point from the robot_base_frame to the same frame as the planar_cloud (this only needs to be done for the slope method)
-		try {
-			listener_.transformPoint(planar_cloud->header.frame_id, robot_base_point_tfd_, robot_base_point_);
-		} catch (const tf::TransformException& e) {
-			robot_base_point_.header.stamp = ros::Time::now(); // Base point could not be transformed so let's ensure it has the correct time stamp
-			ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
-			// ROS_ERROR_STREAM("[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
-		}
-
-
 
 		// Before slope method we have to parse the raw cloud understanding the lidar config
 		this->cloudParser(pcl_cloud);
@@ -271,11 +268,11 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 }
 
 void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
+	bool in_poly;
 	geometry_msgs::PointStamped cloud_point;
 	float local_distance;
 	// cloud_point.header.stamp = planar_cloud->header.stamp;
 	cloud_point.header.frame_id = planar_cloud->header.frame_id;
-
 
 	point_XYZDTO checked_point;
 	for (int i=0; i<planar_cloud->points.size(); ++i) {
@@ -288,24 +285,32 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 			checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 			checked_point.time_stamp = ros::Time::now();
 			checked_point.obstacle = 0;
-			
-			// This is how the height method determines what the ground is
-			if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {
-				
-				local_distance = sqrt((checked_point.x - robot_base_point_.point.x) * (checked_point.x - robot_base_point_.point.x) + (checked_point.y - robot_base_point_.point.y) * (checked_point.y - robot_base_point_.point.y));	
-				if (poly_init_ && local_distance < max_robot_reach_) {
-					cloud_point.point.x = planar_cloud->points[i].x;
-					cloud_point.point.y = planar_cloud->points[i].y;
 
+	        // Check to see if the point is within the robot footprint
+	        // This is made efficient by first checking to make sure the point is within the robot possible max reach
+			local_distance = sqrt((checked_point.x - robot_base_point_.point.x) * (checked_point.x - robot_base_point_.point.x) + (checked_point.y - robot_base_point_.point.y) * (checked_point.y - robot_base_point_.point.y));
+	        if (poly_init_ && local_distance < max_robot_reach_) {	
+	            cloud_point.point.x = checked_point.x;
+	            cloud_point.point.y = checked_point.y;
+	            
+	            in_poly = point_in_poly(current_poly_, cloud_point);
+	        } else {
+	            // Even if the polygon is not initialized 
+	            in_poly = false;
+	        }
+
+	        if (!in_poly) {
+				// This is how the height method determines what the ground is
+				if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {
 					// Check to see if the points is within the robot
 					// This is made efficient by first checking to make sure the point is within the robot possible max reach
-					in_poly_ = point_in_poly(current_poly_, cloud_point);
+					in_poly = point_in_poly(current_poly_, cloud_point);
 
 					// If the point is not in the polygon then we build it in as an obstacle					
-					if (!in_poly_) {
-						
+					if (!in_poly) {
+							
 						// If the height is in the warning zone we will label it as such
-						if(checked_point.z > current_robot_height_.z - robot_height_warning_) {
+						if (checked_point.z > current_robot_height_.z - robot_height_warning_) {
 							checked_point.obstacle = 4;
 						} else {
 							checked_point.obstacle = 1;
@@ -313,25 +318,15 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 
 						occupied_list_.push_back(checked_point);
 					}
-				} else {
-
-					// If the height is in the warning zone we will label it as such
-					if(checked_point.z > current_robot_height_.z - robot_height_warning_) {
-						checked_point.obstacle = 4;
-					} else {
-						checked_point.obstacle = 1;
-					}
-
-					occupied_list_.push_back(checked_point);
 				}
-			}
-		
-            points_checked_.push_back(checked_point);
+				points_checked_.push_back(checked_point);
+	        }
 		}
 	}
 }
 
 void LiveMapper::slopeMethod() {
+	bool in_poly;
 	geometry_msgs::PointStamped cloud_point;
 
 	// Since cloud parser translated front and back cloud to robot_base_frame the cloud point we need to check is in that same frame and not the planar_cloud frame
@@ -355,14 +350,14 @@ void LiveMapper::slopeMethod() {
                 cloud_point.point.x = front_cloud_[i].x;
                 cloud_point.point.y = front_cloud_[i].y;
                 
-                in_poly_ = point_in_poly(current_poly_, cloud_point);
+                in_poly = point_in_poly(current_poly_, cloud_point);
             } else {
                 // Even if the polygon is not initialized 
-                in_poly_ = false;
+                in_poly = false;
             }
 
             // If the point is not inside the polygon then we are going to check to see if it is an obstacle point
-            if ((!in_poly_) && ((front_cloud_[i].distance - front_cloud_[g].distance) < max_check_dist_)) {
+            if ((!in_poly) && ((front_cloud_[i].distance - front_cloud_[g].distance) < max_check_dist_)) {
 
                 // Slope calculation and check
                 slope = (front_cloud_[i].z - front_cloud_[g].z) / (front_cloud_[i].distance - front_cloud_[g].distance);
@@ -422,14 +417,14 @@ void LiveMapper::slopeMethod() {
             if (poly_init_ && back_cloud_[i].distance < max_robot_reach_) {
                 cloud_point.point.x = back_cloud_[i].x;
                 cloud_point.point.y = back_cloud_[i].y;
-                in_poly_ = point_in_poly(current_poly_, cloud_point);
+                in_poly = point_in_poly(current_poly_, cloud_point);
             } else {
                 // Even if the polygon is not initialized 
-                in_poly_ = false;
+                in_poly = false;
             }
 
             // If the point is not inside the polygon then we are going to check to see if it is an obstacle point
-            if ((!in_poly_) && ((back_cloud_[i].distance - back_cloud_[g].distance) < max_check_dist_)) {
+            if ((!in_poly) && ((back_cloud_[i].distance - back_cloud_[g].distance) < max_check_dist_)) {
 
                 // Slope calculation and check
                 slope = (back_cloud_[i].z - back_cloud_[g].z) / (back_cloud_[i].distance - back_cloud_[g].distance);
@@ -724,9 +719,10 @@ void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 		temp_poly_point.point.x = temp_poly_point_tfd.point.x = current_poly_.polygon.points[i].x;
 		temp_poly_point.point.y = temp_poly_point_tfd.point.y = current_poly_.polygon.points[i].y;
 		temp_poly_point.point.z = temp_poly_point_tfd.point.z = current_poly_.polygon.points[i].z;
+
 		try {
 			listener_.transformPoint(new_header.frame_id, temp_poly_point_tfd, temp_poly_point);
-			
+
 			current_poly_.polygon.points[i].x = temp_poly_point.point.x;
 			current_poly_.polygon.points[i].y = temp_poly_point.point.y;
 			current_poly_.polygon.points[i].z = temp_poly_point.point.z;
