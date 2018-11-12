@@ -6,7 +6,7 @@
 #//      Created   : 1/23/2018
 #//      Author    : Chris Suarez
 #//      Platforms : Ubuntu 64-bit
-#//      Copyright : Copyright© The University of Texas at Austin, 2014-2017. All rights reserved.
+#//      Copyright : Copyright The University of Texas at Austin, 2014-2017. All rights reserved.
 #//                 
 #//          All files within this directory are subject to the following, unless an alternative
 #//          license is explicitly included within the text of each file.
