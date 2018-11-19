@@ -157,14 +157,6 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 
 		prev_height_ = map_to_publish_.info.height;
 		prev_width_ = map_to_publish_.info.width;
-		// prev_origin_x_ = map_to_publish_.info.origin.position.x;
-		// prev_origin_y_ = map_to_publish_.info.origin.position.y;
-		// prev_upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
-		// prev_upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
-		// prev_max_x_ = max_x_;
-		// prev_max_y_ = max_y_;
-		// prev_min_x_ = min_x_;
-		// prev_min_y_ = min_y_;
 
 		prev_map_data_.clear();
 		for (int i=0; i<map_to_publish_.data.size(); ++i) {
@@ -209,7 +201,6 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 	} catch (const tf::TransformException& e) {
 		robot_base_point_.header.stamp = ros::Time::now(); // Base point could not be transformed so let's ensure it has the correct time stamp
 		ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known and neither method will be able to sift out points from the robot polygon. If this error persists you might want to use height method for obstacle detection.");
-		// ROS_ERROR_STREAM("[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known. If this error persists you might want to use height method for obstacle detection.");
 	}
 
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
@@ -271,7 +262,6 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 	bool in_poly;
 	geometry_msgs::PointStamped cloud_point;
 	float local_distance;
-	// cloud_point.header.stamp = planar_cloud->header.stamp;
 	cloud_point.header.frame_id = planar_cloud->header.frame_id;
 
 	point_XYZDTO checked_point;
@@ -639,7 +629,7 @@ void LiveMapper::mapBuilder() {
 	prev_map_build_time_ = ros::Time::now();
 }
 
-// The Scan Builder function contructs a feaux 2D laserscan based on the class varibale occupied_list.
+// The Scan Builder function contructs a faux 2D laserscan based on the class varibale occupied_list.
 void LiveMapper::scanBuilder() {
 	int obs_prob, placement_spot;
 
@@ -694,7 +684,6 @@ void LiveMapper::mapDiscretizer() {
         ++map_to_publish_.info.height;
         ++d_y_;
 	}
-
 	while ((map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_)) < max_x_) {
 		++map_to_publish_.info.width;
         ++dx_;
@@ -703,9 +692,6 @@ void LiveMapper::mapDiscretizer() {
 		++map_to_publish_.info.height;
         ++dy_;
 	}
-
-	// upper_x_ = map_to_publish_.info.origin.position.x + (map_to_publish_.info.width * map_res_);
-	// upper_y_ = map_to_publish_.info.origin.position.y + (map_to_publish_.info.height * map_res_);
 
 	// Checking to see if the size of the map has changed.  No need to refill an entire new map if it is the same size
 	map_dim_change_ = (prev_width_ != map_to_publish_.info.width) || (prev_height_ != map_to_publish_.info.height);
