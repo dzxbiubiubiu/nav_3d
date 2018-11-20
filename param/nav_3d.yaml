@@ -6,24 +6,24 @@ nav_3d:
     poly_topic:  "nav_3d/robot_footprint_stamped"
     height_topic:  "nav_3d/robot_height"
     robot_base_frame:  "/base_footprint"
-    lidar_configuration: 2
+    lidar_configuration: 1
     obstacle_algorithm:  "slope" # height or slope
     map_registration:  "scan"
     robot_height_default:  1.0
     robot_height_buffer:   0.05
     robot_height_warning:   0.25
-    floor_range:  0.01
+    floor_range:  0.1
     min_obj_dist:  0.0
     max_check_dist: 100.0
     max_robot_reach:  3.0
     scan_res:  3
     map_res:  0.10
-    slope_threshold:  0.5
+    slope_threshold:  2
     drivable_height: 0.07
     max_step_height: 0.25
     max_ditch_depth: 0.5 # This should be a positive number. 1.0 will be used as -1.0 m in the z axis
     stale_map_time:  10
-    obstacle_decay_factor: 0.60
+    obstacle_decay_factor: 0.6
     obstacle_decay:
       type: "exponential"
       time:  30

@@ -712,13 +712,16 @@ void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 			current_poly_.polygon.points[i].x = temp_poly_point.point.x;
 			current_poly_.polygon.points[i].y = temp_poly_point.point.y;
 			current_poly_.polygon.points[i].z = temp_poly_point.point.z;
+			
+			if (!(current_poly_.header.frame_id == new_header.frame_id))
+				current_poly_.header.frame_id = new_header.frame_id;
+
 		} catch (const tf::TransformException& e) {
 			ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not convert the robot polygon into the same frame as the incoming cloud scan.  It is likely that obstacle data around the robot will be inaccurate.");
 		}
 
 	}
 
-	current_poly_.header.frame_id = new_header.frame_id;
 }
 
 void LiveMapper::updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped) {
