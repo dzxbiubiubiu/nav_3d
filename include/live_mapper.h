@@ -65,7 +65,7 @@ private:
 	ros::Publisher viz_pub_;
 	tf::TransformListener listener_;
 
-	// Point structure that includes a planar distance calc, time stamp, and number stamp
+	// Point structure that includes a planar distance calc, time stamp, and obstacle data
 	struct point_XYZDTO
 	{
 		float x, y, z, distance;
@@ -75,10 +75,10 @@ private:
 
 	//Varibles that will be set via yaml file
 	int lidar_config_, scan_res_;
-	std::string alg_name_, map_reg_, obs_decay_type_, robot_base_frame_;
+	std::string alg_name_, map_reg_, obs_decay_type_, robot_base_frame_, lidar_frame_;
 	float robot_height_default_, floor_range_, slope_threshold_, drivable_height_, max_step_height_, min_obj_dist_, 
 		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_,
-		max_ditch_depth_, viz_timer_, robot_height_buffer_, robot_height_warning_;
+		max_ditch_depth_, viz_timer_, robot_height_buffer_, robot_height_warning_, lidar_tilt_threshold_, recent_obs_purge_time_;
 	bool viz_tool_;
 
 	//Robot footprint variables
@@ -97,6 +97,8 @@ private:
 	nav_msgs::OccupancyGrid map_to_publish_;
 	sensor_msgs::LaserScan scan_to_publish_;
 	std::vector<point_XYZDTO> occupied_list_, points_checked_;
+	std::vector<int> recent_obs_cells_;
+	ros::Time prev_recent_obs_purge_time_;
 	bool map_dim_change_;
 
 	int num_of_pts_;

@@ -41,16 +41,23 @@ LiveMapper::LiveMapper() {
 	// These variables not used elsewhere in class...
 	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, viz_topic;
 
-	if (!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map"))
+	if (!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map")) {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
-		if (!nh_.param<std::string>("nav_3d/live_mapper/scan_pub_topic", scan_pub_topic, "nav_3d/live_scan"))
+	}
+	if (!nh_.param<std::string>("nav_3d/live_mapper/scan_pub_topic", scan_pub_topic, "nav_3d/live_scan")) {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << scan_pub_topic << ".");
-	if (!nh_.param<std::string>("nav_3d/live_mapper/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud"))
+	}
+	if (!nh_.param<std::string>("nav_3d/live_mapper/planar_cloud_topic", planar_cloud_topic, "laser_stitcher/planar_cloud")) {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get planar cloud topic from parameter server - defaulting to " << planar_cloud_topic << ".");
+	}
+
 	nh_.param<std::string>("nav_3d/live_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint_stamped");
 	nh_.param<std::string>("nav_3d/live_mapper/height_topic", height_topic, "nav_3d/robot_height");
-	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame_, "base_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/robot_base_frame", robot_base_frame_, "/base_footprint");
+	nh_.param<std::string>("nav_3d/live_mapper/lidar_frame", lidar_frame_, "/hokuyo_lidar");
 	nh_.param<int>("nav_3d/live_mapper/lidar_configuration", lidar_config_, 1);
+	nh_.param<float>("nav_3d/live_mapper/lidar_tilt_threshold", lidar_tilt_threshold_, 1);
+	// nh_.param<float>("nav_3d/live_mapper/lidar_tilt_threshold", lidar_tilt_offset_, 1);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/live_mapper/map_registration", map_reg_, "map");
 	nh_.param<float>("nav_3d/live_mapper/robot_height_default", robot_height_default_, 1);
@@ -67,9 +74,10 @@ LiveMapper::LiveMapper() {
 	nh_.param<float>("nav_3d/live_mapper/max_step_height", max_step_height_, 1.0);
 	nh_.param<float>("nav_3d/live_mapper/max_ditch_depth", max_ditch_depth_, 1.0);
 	nh_.param<float>("nav_3d/live_mapper/stale_map_time", stale_map_time_, 10);
-	nh_.param<float>("nav_3d/live_mapper/obstacle_decay_factor", obs_decay_factor_, 0.9);
+	nh_.param<float>("nav_3d/live_mapper/obstacle_decay_factor", obs_decay_factor_, 0.8);
 	nh_.param<std::string>("nav_3d/live_mapper/obstacle_decay/type", obs_decay_type_, "exponential");
 	nh_.param<float>("nav_3d/live_mapper/obstacle_decay/time", obs_decay_time_, 90);
+	nh_.param<float>("nav_3d/live_mapper/recent_obstacle_purge_time", recent_obs_purge_time_, 5);
 	nh_.param<float>("nav_3d/live_mapper/loop_rate", loop_rate_, 40);
 	nh_.param<bool>("nav_3d/live_mapper/visualization_tool/active", viz_tool_, false);
 	nh_.param<std::string>("nav_3d/live_mapper/visualization_tool/pub_topic", viz_topic, "nav_3d/obs_cloud");
@@ -77,8 +85,9 @@ LiveMapper::LiveMapper() {
 
 
 
-	if (!(obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP" || obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN"))
+	if (!(obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP" || obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN")) {
 		ROS_ERROR_STREAM("[Nav_3d] Did not receive a valid obstacle decay type.  All obstacles will accumulate overtime and will never be removed from the map.");
+	}
 
 	// Subscribers
 	planar_cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(planar_cloud_topic, 1, &LiveMapper::mainCallback, this);
@@ -96,8 +105,9 @@ LiveMapper::LiveMapper() {
 		// ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
 	// }
 
-	if (viz_tool_)
+	if (viz_tool_) {
 		viz_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(viz_topic, 1, this);
+	}
 
 	// Time keeping
 	start_time_ = ros::Time::now();
@@ -186,10 +196,9 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		}
 	// }
 
-	if (!robot_height_init_)
+	if (!robot_height_init_) {
 		ROS_WARN_THROTTLE(30, "The actual robot height has not been initialized.  Currently working off of the robot height default which is set to %f.", robot_height_default_);
-	
-
+	}
 	
 	// Converting the planar cloud into a XYZ cloud before running any algorithms
 	pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZ>);
@@ -203,13 +212,46 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 		ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not get the transform from the map frame to the base of the robot.  Slope method will not always output accurate obstacle data is this transform isn't known and neither method will be able to sift out points from the robot polygon. If this error persists you might want to use height method for obstacle detection.");
 	}
 
+	// Running a check to see how tilted the lidar is relative to the map.  If it greater than a set amount then slope method will not operate properly so let's set the alg_name to height
+	try {
+		tf::StampedTransform global_tf, local_tf;
+		tf::Quaternion global_rot, local_rot;
+		double global_roll, local_roll, pitch, yaw;
+
+		// Looking up the roll from the base_link to the lidar
+		listener_.lookupTransform("/base_link", lidar_frame_, ros::Time(0), local_tf);
+		local_rot = local_tf.getRotation();
+		tf::Matrix3x3 l_mat(local_rot);
+		l_mat.getRPY(local_roll, pitch, yaw);
+
+		// Looking up the roll from the map frame to the lidar 
+		listener_.lookupTransform("/map", lidar_frame_, ros::Time(0), global_tf);
+		global_rot = global_tf.getRotation();
+		tf::Matrix3x3 g_mat(global_rot);
+		g_mat.getRPY(global_roll, pitch, yaw);
+
+
+		// Rad to degrees
+		global_roll = global_roll * 180 / 3.1416;
+		local_roll = local_roll * 180 / 3.1416;
+
+		// If the lidar is tilted relative to the map vs the base_link more than the threshold in degrees than we will always use height method
+		if (fabs(global_roll - local_roll) > lidar_tilt_threshold_){
+			alg_name_ = "height";
+		}
+
+	} catch (const tf::TransformException& e) {
+		ROS_ERROR_THROTTLE(30, "[Nav_3d] Live mapper could not get the transform from the map frame to the lidar frame. If the lidar is significantly rolled relative to the map frame slope method may not perform properly.");
+	}
+
 	// Calling the right algorithm to run on the planar_cloud to find the obstacles
 	if (alg_name_ == "height" || alg_name_ == "Height" || alg_name_ == "HEIGHT" || alg_name_ == "height_method" || alg_name_ == "height method" || alg_name_ == "HEIGHT METHOD" || alg_name_ == "Height Method") {
 		points_checked_.clear();
 
 		// If the polygon and the points being read are different frames we'll transform the polygon
-		if (current_poly_.header.frame_id != planar_cloud->header.frame_id)
+		if (current_poly_.header.frame_id != planar_cloud->header.frame_id) {
 			this->convertPoly(planar_cloud->header);
+		}
 
 		this->heightMethod(pcl_cloud);
 
@@ -254,8 +296,9 @@ void LiveMapper::mainCallback(const sensor_msgs::PointCloud2::ConstPtr& planar_c
 
 
 	// Visualize data in point cloud form if viz tool is set to active
-	if (viz_tool_)
+	if (viz_tool_) {
 		this->visualizationTool();
+	}
 }
 
 void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& planar_cloud) {
@@ -291,23 +334,16 @@ void LiveMapper::heightMethod(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pl
 
 	        if (!in_poly) {
 				// This is how the height method determines what the ground is
-				if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {
-					// Check to see if the points is within the robot
-					// This is made efficient by first checking to make sure the point is within the robot possible max reach
-					in_poly = point_in_poly(current_poly_, cloud_point);
-
-					// If the point is not in the polygon then we build it in as an obstacle					
-					if (!in_poly) {
-							
-						// If the height is in the warning zone we will label it as such
-						if (checked_point.z > current_robot_height_.z - robot_height_warning_) {
-							checked_point.obstacle = 4;
-						} else {
-							checked_point.obstacle = 1;
-						}
-
-						occupied_list_.push_back(checked_point);
+				if (!(planar_cloud->points[i].z > - floor_range_ && planar_cloud->points[i].z <  floor_range_)) {			
+						
+					// If the height is in the warning zone we will label it as such
+					if (checked_point.z > current_robot_height_.z - robot_height_warning_) {
+						checked_point.obstacle = 4;
+					} else {
+						checked_point.obstacle = 1;
 					}
+
+					occupied_list_.push_back(checked_point);
 				}
 				points_checked_.push_back(checked_point);
 	        }
@@ -554,12 +590,13 @@ void LiveMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& pla
 // New_obs is strictly the new vector of obstacle points that have been added in this most recent spin
 void LiveMapper::mapBuilder() {
 	bool stale_map;
-	if(prev_map_build_time_ == ros::Time(0))
+	if(prev_map_build_time_ == ros::Time(0)) {
 		stale_map = true;
-	else if(ros::Duration(ros::Time::now() - prev_map_build_time_).toSec() > stale_map_time_)
+	} else if(ros::Duration(ros::Time::now() - prev_map_build_time_).toSec() > stale_map_time_) {
 		stale_map = true;
-	else
+	} else {
 		stale_map = false;
+	}
 
 	// If the map dimensions have changed at all we need to transfer the data over from the old map into the new map
 	if (map_dim_change_) {
@@ -579,12 +616,13 @@ void LiveMapper::mapBuilder() {
 				// Super smart indexing formula to shift the old data to the new fresh map
 				new_index = i + d_y_ * (map_to_publish_.info.width) + ((int)(i / prev_width_) + 1) * d_x_ + ((int)(i / prev_width_)) * dx_;
 
-				if(prev_map_data_[i] <= 0)
+				if(prev_map_data_[i] <= 0) {
 					map_to_publish_.data[new_index] = prev_map_data_[i];
-				else
+				} else {
 					map_to_publish_.data[new_index] = prev_map_data_[i];
+				}
 			}
-        // If the map only changed size in the positive y direction then we can just add on unkown points to the end of the data
+        // If the map only changed size in the positive y direction then we can just add on unknown points to the end of the data
 		} else {
 			while (map_to_publish_.data.size() < new_map_size) {
 				map_to_publish_.data.push_back(-1);
@@ -593,8 +631,12 @@ void LiveMapper::mapBuilder() {
 	}
 
 	int y_placement, x_placement, placement_spot;
-	std::vector<int> cells_checked;
-	cells_checked.clear();
+
+	// The list of cells to recently be declared as an obstacle must be cleared if the data is old or 
+	if (map_dim_change_ || (ros::Duration(ros::Time::now() - prev_recent_obs_purge_time_).toSec() > recent_obs_purge_time_)) {
+		recent_obs_cells_.clear();
+		prev_recent_obs_purge_time_ = ros::Time::now();
+	}
 
 	// Running throught the new points that have been checked
 	for (int i=0; i<points_checked_.size(); ++i) {
@@ -610,19 +652,18 @@ void LiveMapper::mapBuilder() {
 			// If the point checked is a new obstacle then set it to 99 on the map
 			if (points_checked_[i].obstacle == 1) {
 				map_to_publish_.data[placement_spot] = 99;
-				cells_checked.push_back(placement_spot);
-	        // If the point checked is previously unknown and the point is not flagged as an obstacle then it will be assigned as a ground point
-			} else if (map_to_publish_.data[placement_spot] <= 0 && (! (points_checked_[i].obstacle == 1) )) {
+				recent_obs_cells_.push_back(placement_spot);
+	        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
+			} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
 				map_to_publish_.data[placement_spot] = 0;
-	        // do the obstacle decay 
-			} else {
-				// If the cell previously was occupied with an obstacle and has been checked and there has not been a new obstacle seen
-				// we will reduce the value of the probability that an obstacle is in that cell by multiplying the obstacle decay factor (< 1).
-				if (std::find(cells_checked.begin(), cells_checked.end(), placement_spot) == cells_checked.end()) {
+	        // do the obstacle decay if the point has been detected as drivable or likely drivable in a previously scanned cell
+			} else if ( (points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2) ) {
+
+				// If the cell has not been labled with an obstacle recently then and has been checked we will reduce the probability of an obstacle in that cell		
+				if ( !(std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
 					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * obs_decay_factor_;
-					cells_checked.push_back(placement_spot);
 				}
-			}			
+			}
 		}
 	}
 
@@ -634,12 +675,13 @@ void LiveMapper::scanBuilder() {
 	int obs_prob, placement_spot;
 
 	for (int i=0; i<occupied_list_.size(); ++i) {
-		if (obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP")
+		if (obs_decay_type_ == "exponential" || obs_decay_type_ == "exp" || obs_decay_type_ == "Exponential" || obs_decay_type_ == "EXP") {
 			obs_prob = std::min((int)(99 * exp(-(ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ )) , 99);
-			// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life
-		else if (obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN")
+			// Modeled like a decay function N0 * e ^ -t / Tau where Tau (obs_decay_time) is half life			
+		} else if (obs_decay_type_ == "linear" || obs_decay_type_ == "lin" || obs_decay_type_ == "Linear" || obs_decay_type_ == "LIN") {
 			obs_prob = std::min((int)(99 - 99 * (ros::Duration(ros::Time::now() - occupied_list_[i].time_stamp).toSec()) / obs_decay_time_ ) , 99);
-			// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability
+			// Modeled linearly where obs_decay_time is the time for the obstacle to reach 0 probability			
+		}
 
 		// If the probability of an obstacle is greater than 5% we will build it into the map
 		if (obs_prob > 5) {
@@ -657,14 +699,21 @@ void LiveMapper::scanBuilder() {
 }
 
 void LiveMapper::mapSizeMaintainer(const pcl::PointXYZ point) {
-	if(point.x > max_x_)
+	if(point.x > max_x_) {
 		max_x_ = point.x + 5 *map_res_;
-	if(point.y > max_y_)
+	}
+
+	if(point.y > max_y_) {
 		max_y_ = point.y + 5 *map_res_;
-	if(point.x < min_x_)
+	}
+
+	if(point.x < min_x_) {
 		min_x_ = point.x - 5 *map_res_;
-	if(point.y < min_y_)
+	}
+
+	if(point.y < min_y_){
 		min_y_ = point.y - 5 *map_res_;
+	}
 }
 
 void LiveMapper::mapDiscretizer() {
@@ -713,8 +762,9 @@ void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 			current_poly_.polygon.points[i].y = temp_poly_point.point.y;
 			current_poly_.polygon.points[i].z = temp_poly_point.point.z;
 			
-			if (!(current_poly_.header.frame_id == new_header.frame_id))
+			if (!(current_poly_.header.frame_id == new_header.frame_id)) {
 				current_poly_.header.frame_id = new_header.frame_id;
+			}
 
 		} catch (const tf::TransformException& e) {
 			ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not convert the robot polygon into the same frame as the incoming cloud scan.  It is likely that obstacle data around the robot will be inaccurate.");
