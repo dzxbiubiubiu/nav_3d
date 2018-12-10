@@ -100,7 +100,6 @@ LiveMapper::LiveMapper() {
 	// }
 	// else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		scan_pub_ = nh_.advertise<sensor_msgs::LaserScan>(scan_pub_topic, 1, this);
-		poly_pub_ = nh_.advertise<geometry_msgs::PolygonStamped>("nav_3d/live_mapper/polygon", 1, this);
 	// }
 	// else {
 		// ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
