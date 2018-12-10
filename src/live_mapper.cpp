@@ -100,6 +100,7 @@ LiveMapper::LiveMapper() {
 	// }
 	// else if ((map_reg_ == "scan") || (map_reg_ == "Scan") || (map_reg_ == "SCAN")) {
 		scan_pub_ = nh_.advertise<sensor_msgs::LaserScan>(scan_pub_topic, 1, this);
+		poly_pub_ = nh_.advertise<geometry_msgs::PolygonStamped>("nav_3d/live_mapper/polygon", 1, this);
 	// }
 	// else {
 		// ROS_ERROR_STREAM("[Nav_3d] Live mapper failed to receive the map registration param.  Aborting live mapper.");
@@ -748,6 +749,7 @@ void LiveMapper::mapDiscretizer() {
 
 void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 	geometry_msgs::PointStamped temp_poly_point, temp_poly_point_tfd;
+	bool tf_fail = false;
 
 	for (int i=0; i<current_poly_.polygon.points.size(); ++i) {
 		temp_poly_point.header = temp_poly_point_tfd.header = current_poly_.header;
@@ -762,14 +764,15 @@ void LiveMapper::convertPoly(const std_msgs::Header new_header) {
 			current_poly_.polygon.points[i].y = temp_poly_point.point.y;
 			current_poly_.polygon.points[i].z = temp_poly_point.point.z;
 			
-			if (!(current_poly_.header.frame_id == new_header.frame_id)) {
-				current_poly_.header.frame_id = new_header.frame_id;
-			}
-
 		} catch (const tf::TransformException& e) {
 			ROS_ERROR_THROTTLE(30, "[Nav_3d] Live Mapper could not convert the robot polygon into the same frame as the incoming cloud scan.  It is likely that obstacle data around the robot will be inaccurate.");
+			tf_fail = true;
 		}
 
+	}
+
+	if (!(current_poly_.header.frame_id == new_header.frame_id) && !tf_fail) {
+		current_poly_.header.frame_id = new_header.frame_id;
 	}
 
 }
