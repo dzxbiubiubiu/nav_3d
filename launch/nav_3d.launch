@@ -13,9 +13,19 @@
     output= "screen"
   >
   </node>
+
+  <!-- Run the post mapper node -->
+  <node
+    name  = "post_mapper"
+    pkg   = "nav_3d"
+    type  = "post_mapper"
+    args  = ""
+    output= "screen"
+  >
+  </node>
     
 
-  <node
+  <!-- node
     name    = "front_buffer_broadcaster"   pkg = "tf"   type = "static_transform_publisher"
         args    = "0.2 -0.2 0.0  0.0 0.0 0.0   /laser_scan_link /scan_buffer_1    100"
   > </node>
@@ -23,22 +33,22 @@
   <node
     name    = "front_buffer_broadcaster_2"   pkg = "tf"   type = "static_transform_publisher"
         args    = "0.2 0.2 0.0  0.0 0.0 0.0   /laser_scan_link /scan_buffer_2    100"
-  > </node>
+  > </node> -->
 
   <!-- Loading the robot state params from the yaml file 
   <rosparam command="load" file="$(find nav_3d)/param/robot_state.yaml"/> -->
 
-  <!-- Launching rviz with the nav_3d config file 
+  <!-- Launching rviz with the nav_3d config file -->
   <node
     type ="rviz"
     name ="rviz"
     pkg  ="rviz"
     args ="-d $(find nav_3d)/rviz/nav_3d.rviz"
   >
-  </node>-->
+  </node>
 
   <!-- Run the robot state node.  NOTE the parameter settings can be adjusted at the top of the 
-       source code in robot_state.py rather that in a yaml file as with cpp files.  -->
+       source code in robot_state.py rather that in a yaml file as with cpp files.  
   <node 
     name="robot_state"
     pkg="nav_3d"
@@ -46,9 +56,9 @@
     args  = ""
     output="screen"
   >
-  </node>
+  </node>-->
 
-  <!-- Xbox control -->
+  <!-- Xbox control 
   <arg name="joy_dev" default="/dev/input/js0" />
   <group ns="joy_teleop_console">
 
@@ -60,6 +70,6 @@
   </group>
   <node pkg="teleop_twist_joy" type="teleop_node" name="teleop_twist_joy_console" >
     <remap from="joy" to="joy_teleop_console/joy"/>
-  </node>
+  </node>-->
  
 </launch>

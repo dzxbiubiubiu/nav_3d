@@ -145,6 +145,9 @@ add_library(point_in_poly src/point_in_poly.cpp)
 add_executable(live_mapper src/live_mapper.cpp)
 target_link_libraries(live_mapper point_in_poly ${catkin_LIBRARIES})
 
+add_executable(post_mapper src/post_mapper.cpp)
+target_link_libraries(post_mapper point_in_poly ${catkin_LIBRARIES})
+
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
 ## target back to the shorter version for ease of user use
@@ -177,6 +180,7 @@ install(PROGRAMS
   src/nav_3d
   src/point_in_poly
   src/polygon_filter
+  srd/post_mapper
   src/robot_state
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
