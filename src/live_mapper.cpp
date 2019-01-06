@@ -39,7 +39,7 @@
 
 LiveMapper::LiveMapper() {
 	// These variables not used elsewhere in class...
-	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, viz_topic;
+	std::string planar_cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, viz_topic, viz_full_topic;
 
 	if (!nh_.param<std::string>("nav_3d/live_mapper/map_pub_topic", map_pub_topic, "nav_3d/live_map")) {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
@@ -81,6 +81,7 @@ LiveMapper::LiveMapper() {
 	nh_.param<float>("nav_3d/live_mapper/loop_rate", loop_rate_, 40);
 	nh_.param<bool>("nav_3d/live_mapper/visualization_tool/active", viz_tool_, false);
 	nh_.param<std::string>("nav_3d/live_mapper/visualization_tool/pub_topic", viz_topic, "nav_3d/obs_cloud");
+	nh_.param<std::string>("nav_3d/live_mapper/visualization_tool/full_pub_topic", viz_full_topic, "nav_3d/obs_full_cloud");
 	nh_.param<float>("nav_3d/live_mapper/visualization_tool/reset_timer", viz_timer_, 10.0);
 
 
@@ -107,6 +108,7 @@ LiveMapper::LiveMapper() {
 
 	if (viz_tool_) {
 		viz_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(viz_topic, 1, this);
+		viz_full_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(viz_full_topic, 1, this);
 	}
 
 	// Time keeping
@@ -139,6 +141,12 @@ LiveMapper::LiveMapper() {
 	while (ros::ok()) {
 		ros::spinOnce();
 		loop_rate.sleep();
+
+		// Publishing the last final full viz cloud immediately upon the timeout. Cannot wait for the next callback to publish
+		if (viz_tool_ && !viz_full_pubbed_ && (ros::Duration(ros::Time::now() - prev_viz_pub_time_).toSec() > viz_timer_)) {
+			viz_full_pub_.publish(viz_cloud_pub_);
+			viz_full_pubbed_ = true;
+		}
 	}
 }
 
@@ -831,6 +839,8 @@ void LiveMapper::visualizationTool() {
 		
 		viz_cloud_.points.push_back(point);
 	}
+
+	viz_full_pubbed_ = false;
 
 	pcl::toROSMsg(viz_cloud_, viz_cloud_pub_);
 	viz_pub_.publish(viz_cloud_pub_);

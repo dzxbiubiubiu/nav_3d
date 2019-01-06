@@ -39,7 +39,7 @@
 
 PostMapper::PostMapper() {
 	// These variables not used elsewhere in class...
-	std::string cloud_topic, poly_topic, height_topic, map_pub_topic, scan_pub_topic, viz_topic;
+	std::string cloud_topic, poly_topic, height_topic, map_topic, map_pub_topic, scan_pub_topic, viz_topic;
 
 	if (!nh_.param<std::string>("nav_3d/post_mapper/map_pub_topic", map_pub_topic, "nav_3d/post_map")) {
 		ROS_WARN_STREAM("[Nav_3d] Failed to get map pub topic from parameter server - defaulting to " << map_pub_topic << ".");
@@ -53,6 +53,7 @@ PostMapper::PostMapper() {
 
 	nh_.param<std::string>("nav_3d/post_mapper/poly_topic", poly_topic, "nav_3d/robot_footprint_stamped");
 	nh_.param<std::string>("nav_3d/post_mapper/height_topic", height_topic, "nav_3d/robot_height");
+	nh_.param<std::string>("nav_3d/post_mapper/map_topic", map_topic, "nav_3d/live_map");
 	nh_.param<std::string>("nav_3d/post_mapper/robot_base_frame", robot_base_frame_, "/base_footprint");
 	nh_.param<std::string>("nav_3d/post_mapper/obstacle_algorithm", alg_name_, "slope");
 	nh_.param<std::string>("nav_3d/post_mapper/map_registration", map_reg_, "map");
@@ -89,6 +90,7 @@ PostMapper::PostMapper() {
 
 	// Subscribers
 	cloud_sub_ = nh_.subscribe<sensor_msgs::PointCloud2>(cloud_topic, 1, &PostMapper::mainCallback, this);
+	map_sub_ = nh_.subscribe<nav_msgs::OccupancyGrid>(map_topic, 1, &PostMapper::updateMap, this);
 	poly_sub_ = nh_.subscribe<geometry_msgs::PolygonStamped>(poly_topic, 1, &PostMapper::updatePoly, this);
 	height_sub_ = nh_.subscribe<geometry_msgs::Point32>(height_topic, 1, &PostMapper::updateHeight, this);
 
@@ -458,12 +460,8 @@ void PostMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& clo
 		cloud_point.time_stamp = ros::Time::now();
 		cloud_point.obstacle = 0;
 
-		// ROS_INFO_STREAM("x " << cloud_point.x << " y " << cloud_point.y);
-		// ROS_INFO_STREAM("azimuth " << cloud_point.azimuth);
-
 		k = floor(cloud_point.azimuth / angle_index);
 
-		// ROS_INFO_STREAM("k FOUND " << k);
 		parsed_clouds_[k].push_back(cloud_point);
 	}
 
@@ -546,9 +544,16 @@ void PostMapper::mapBuilder() {
 			placement_spot = (y_placement) * map_to_publish_.info.width + x_placement;
 
 			// If the point checked is a new obstacle then set it to 99 on the map
-			if (points_checked_[i].obstacle == 1) {
+			if (points_checked_[i].obstacle == 1) {//&& map_to_publish_.data[placement_spot] <= 0) {
 				map_to_publish_.data[placement_spot] = 99;
 				recent_obs_cells_.push_back(placement_spot);
+			// The post mapper will check against the live mapper. If the live mapper had some probability of obstacle then lets increase it but not set at 99
+	        // } else if (points_checked_[i].obstacle == 1 && map_to_publish_.data[placement_spot] > 0) {
+	        // 	map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (obs_decay_factor_ + 1);
+	        // 	if (map_to_publish_.data[placement_spot] > 99) {
+	        // 		map_to_publish_.data[placement_spot] = 99;
+	        // 	}
+
 	        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
 			} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
 				map_to_publish_.data[placement_spot] = 0;
@@ -681,6 +686,17 @@ void PostMapper::updateHeight(const geometry_msgs::Point32::ConstPtr& new_height
 	current_robot_height_ = *new_height;
 	robot_height_init_ = true;
 }
+
+void PostMapper::updateMap(const nav_msgs::OccupancyGrid::ConstPtr& new_map) {
+	map_to_publish_ = *new_map;
+	
+	for (int i=0; i<map_to_publish_.data.size(); ++i) {
+		prev_map_data_.push_back(map_to_publish_.data[i]);
+	}
+	
+	map_init_ = true;
+}
+
 
 void PostMapper::visualizationTool() {
 	pcl::PointXYZI point;

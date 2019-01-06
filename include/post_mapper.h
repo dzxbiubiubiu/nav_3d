@@ -57,12 +57,8 @@ public:
 	PostMapper();
 private:
 	ros::NodeHandle nh_;
-	ros::Subscriber cloud_sub_;
-	ros::Subscriber poly_sub_;
-	ros::Subscriber height_sub_;
-	ros::Publisher map_pub_;
-	ros::Publisher scan_pub_;
-	ros::Publisher viz_pub_;
+	ros::Subscriber cloud_sub_, poly_sub_, height_sub_, map_sub_;
+	ros::Publisher map_pub_, scan_pub_, viz_pub_;
 	tf::TransformListener listener_;
 
 	// Point structure that includes a planar distance calc, time stamp, and obstacle data
@@ -133,6 +129,7 @@ private:
 	void convertPoly(const std_msgs::Header new_header);
 	void updatePoly(const geometry_msgs::PolygonStamped::ConstPtr& new_poly_stamped);
 	void updateHeight(const geometry_msgs::Point32::ConstPtr& new_height);
+	void updateMap(const nav_msgs::OccupancyGrid::ConstPtr& new_map);
 	void visualizationTool();
 	static bool compareDistance(point_XYZDATO p1, point_XYZDATO p2);
 };

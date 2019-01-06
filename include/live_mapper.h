@@ -57,12 +57,8 @@ public:
 	LiveMapper();
 private:
 	ros::NodeHandle nh_;
-	ros::Subscriber planar_cloud_sub_;
-	ros::Subscriber poly_sub_;
-	ros::Subscriber height_sub_;
-	ros::Publisher map_pub_;
-	ros::Publisher scan_pub_;
-	ros::Publisher viz_pub_;
+	ros::Subscriber planar_cloud_sub_, poly_sub_, height_sub_;
+	ros::Publisher map_pub_, scan_pub_, viz_pub_, viz_full_pub_;
 	tf::TransformListener listener_;
 
 	// Point structure that includes a planar distance calc, time stamp, and obstacle data
@@ -79,7 +75,7 @@ private:
 	float robot_height_default_, floor_range_, slope_threshold_, drivable_height_, max_step_height_, min_obj_dist_, 
 		max_check_dist_, max_robot_reach_, stale_map_time_, obs_decay_time_, map_res_, obs_decay_factor_, loop_rate_,
 		max_ditch_depth_, viz_timer_, robot_height_buffer_, robot_height_warning_, lidar_tilt_threshold_, recent_obs_purge_time_;
-	bool viz_tool_;
+	bool viz_tool_, viz_full_pubbed_;
 
 	//Robot footprint variables
 	geometry_msgs::PolygonStamped current_poly_;

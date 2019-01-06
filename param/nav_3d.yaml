@@ -38,14 +38,16 @@ nav_3d:
     visualization_tool:
         active: true
         pub_topic: "nav_3d/viz_cloud"
-        reset_timer: 5
+        full_pub_topic: "nav_3d/viz_full_cloud"
+        reset_timer: 1
   post_mapper:
-    parsing_segments: 120
-    map_pub_topic:  "nav_3d/post_map"
+    parsing_segments: 180
+    map_pub_topic:  "nav_3d/live_map"
     scan_pub_topic:  "nav_3d/post_scan"
-    cloud_topic:  "laser_stitcher/nav_cloud"
+    cloud_topic:  "nav_3d/viz_full_cloud"
     poly_topic:  "nav_3d/robot_footprint_stamped"
     height_topic:  "nav_3d/robot_height"
+    map_topic: "nav_3d/live_map"
     robot_base_frame:  "/base_footprint"
     obstacle_algorithm:  "slope" # height or slope
     map_registration:  "map" # Not currently used. Live_mapper is outputting both
@@ -72,7 +74,7 @@ nav_3d:
     visualization_tool:
         active: true
         pub_topic: "nav_3d/post_viz_cloud"
-        reset_timer: 5
+        reset_timer: 1
 ###  
   robot_state:
     robot_footprint_frame: "/base_footprint"
