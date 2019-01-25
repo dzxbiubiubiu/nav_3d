@@ -422,6 +422,7 @@ void PostMapper::slopeMethod() {
 					checked_point.z = parsed_clouds_[k][i].z + robot_base_point_.point.z;
 					checked_point.distance = sqrt(checked_point.x * checked_point.x + checked_point.y * checked_point.y);
 					checked_point.obstacle = parsed_clouds_[k][i].obstacle;
+					checked_point.cloud_seg = parsed_clouds_[k][i].cloud_seg;
 					checked_point.time_stamp = ros::Time::now();
 	                points_checked_.push_back(checked_point);
 	                
@@ -461,6 +462,8 @@ void PostMapper::cloudParser(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr& clo
 		cloud_point.obstacle = 0;
 
 		k = floor(cloud_point.azimuth / angle_index);
+		// Tagging the the point with which segment it is in for vizualization
+		cloud_point.cloud_seg = k;
 
 		parsed_clouds_[k].push_back(cloud_point);
 	}
@@ -562,7 +565,9 @@ void PostMapper::mapBuilder() {
 
 				// If the cell has not been labled with an obstacle recently then and has been checked we will reduce the probability of an obstacle in that cell		
 				if ( !(std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
-					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * obs_decay_factor_;
+					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (1 - obs_decay_factor_);
+					// ROS_INFO_STREAM("POST REDUCED PROBABILITY WITH REC OBS");
+
 				}
 			}
 		}
@@ -738,8 +743,8 @@ void PostMapper::visualizationTool() {
 		point.x = points_checked_[i].x;
 		point.y = points_checked_[i].y;
 		point.z = points_checked_[i].z;
-		point.intensity = points_checked_[i].obstacle;
-
+		//point.intensity = points_checked_[i].obstacle;
+		point.intensity = points_checked_[i].cloud_seg;
 		
 		viz_cloud_.points.push_back(point);
 	}

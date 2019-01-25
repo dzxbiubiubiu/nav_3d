@@ -67,6 +67,7 @@ private:
 		float x, y, z, distance, azimuth;
 		ros::Time time_stamp;
 		int obstacle; // Defined point state.  0 = Not an obstacle, 1 = Obstacle, 2 = Likely Drivable (unsure), 3 = Too far away and too high/low (unsure), 4 = Height Warning
+		int cloud_seg;
 	};
 
 	//Varibles that will be set via yaml file

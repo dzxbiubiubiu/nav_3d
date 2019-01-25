@@ -16,7 +16,7 @@ nav_3d:
     obstacle_algorithm:  "slope" # height or slope
     map_registration:  "map" # Not currently used. Live_mapper is outputting both
     robot_height_default:  1.0 # m
-    robot_height_buffer:   0.05 # m
+    robot_height_buffer:   0.5 # m
     robot_height_warning:   0.5 # m
     floor_range:  0.1 # m
     min_obj_dist:  0.0 # m
@@ -29,7 +29,7 @@ nav_3d:
     max_step_height: 0.25 # m
     max_ditch_depth: 0.5 # This should be a positive number. 1.0 will be used as -1.0 m in the z axis
     stale_map_time:  10
-    obstacle_decay_factor: 0.75 # Multiplication factor in reducing the probability of a previously occupied cell without an obstacle
+    obstacle_decay_factor: 0 # Multiplication factor in reducing the probability of a previously occupied cell without an obstacle
     obstacle_decay:
       type: "exponential"
       time:  30
@@ -41,8 +41,8 @@ nav_3d:
         full_pub_topic: "nav_3d/viz_full_cloud"
         reset_timer: 1
   post_mapper:
-    parsing_segments: 180
-    map_pub_topic:  "nav_3d/live_map"
+    parsing_segments: 12
+    map_pub_topic:  "nav_3d/post_map"
     scan_pub_topic:  "nav_3d/post_scan"
     cloud_topic:  "nav_3d/viz_full_cloud"
     poly_topic:  "nav_3d/robot_footprint_stamped"

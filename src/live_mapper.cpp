@@ -669,7 +669,7 @@ void LiveMapper::mapBuilder() {
 
 				// If the cell has not been labled with an obstacle recently then and has been checked we will reduce the probability of an obstacle in that cell		
 				if ( !(std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
-					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * obs_decay_factor_;
+					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (1 - obs_decay_factor_);
 				}
 			}
 		}
