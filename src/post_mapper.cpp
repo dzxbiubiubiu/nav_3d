@@ -539,35 +539,35 @@ void PostMapper::mapBuilder() {
 	for (int i=0; i<points_checked_.size(); ++i) {
 
 		// Only going to build in points that are definitely not an obstacle (0) or definitely an obstacle (1) into the map
-		if (points_checked_[i].obstacle < 2) {
+		if (points_checked_[i].obstacle < 3) {
 
 			// Placement spots to determine where to put the data in the map
 			x_placement = (int) round((points_checked_[i].x - map_to_publish_.info.origin.position.x) / map_res_);
 			y_placement = (int) round((points_checked_[i].y - map_to_publish_.info.origin.position.y) / map_res_);
 			placement_spot = (y_placement) * map_to_publish_.info.width + x_placement;
 
-			// If the point checked is a new obstacle then set it to 99 on the map
-			if (points_checked_[i].obstacle == 1) {//&& map_to_publish_.data[placement_spot] <= 0) {
-				map_to_publish_.data[placement_spot] = 99;
-				recent_obs_cells_.push_back(placement_spot);
-			// The post mapper will check against the live mapper. If the live mapper had some probability of obstacle then lets increase it but not set at 99
-	        // } else if (points_checked_[i].obstacle == 1 && map_to_publish_.data[placement_spot] > 0) {
-	        // 	map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (obs_decay_factor_ + 1);
-	        // 	if (map_to_publish_.data[placement_spot] > 99) {
-	        // 		map_to_publish_.data[placement_spot] = 99;
-	        // 	}
+			// If the cell has been labeled as a recent obstacle then we will no longer process it for this cycle
+			if ( (std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
 
-	        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
-			} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
-				map_to_publish_.data[placement_spot] = 0;
-	        // do the obstacle decay if the point has been detected as drivable or likely drivable in a previously scanned cell
-			} else if ( (points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2) ) {
+				// If the point checked is a new obstacle then set it to 99 on the map
+				if (points_checked_[i].obstacle == 1) {//&& map_to_publish_.data[placement_spot] <= 0) {
+					map_to_publish_.data[placement_spot] = 99;
+					recent_obs_cells_.push_back(placement_spot);
+				// The post mapper will check against the live mapper. If the live mapper had some probability of obstacle then lets increase it but not set at 99
+		        // } else if (points_checked_[i].obstacle == 1 && map_to_publish_.data[placement_spot] > 0) {
+		        // 	map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (obs_decay_factor_ + 1);
+		        // 	if (map_to_publish_.data[placement_spot] > 99) {
+		        // 		map_to_publish_.data[placement_spot] = 99;
+		        // 	}
 
-				// If the cell has not been labled with an obstacle recently then and has been checked we will reduce the probability of an obstacle in that cell		
-				if ( !(std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
+		        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
+				} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
+					map_to_publish_.data[placement_spot] = 0;
+		        // do the obstacle decay if the point has been detected as drivable or likely drivable in a previously scanned cell
+				} else if ( (points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2) ) {
+
+					// If the point is a ground or likely drivable point then reduce obstacle probability in cell
 					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (1 - obs_decay_factor_);
-					// ROS_INFO_STREAM("POST REDUCED PROBABILITY WITH REC OBS");
-
 				}
 			}
 		}
@@ -744,7 +744,7 @@ void PostMapper::visualizationTool() {
 		point.y = points_checked_[i].y;
 		point.z = points_checked_[i].z;
 		//point.intensity = points_checked_[i].obstacle;
-		point.intensity = points_checked_[i].cloud_seg;
+		point.intensity = points_checked_[i].obstacle;
 		
 		viz_cloud_.points.push_back(point);
 	}

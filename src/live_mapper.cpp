@@ -657,18 +657,20 @@ void LiveMapper::mapBuilder() {
 			y_placement = (int) round((points_checked_[i].y - map_to_publish_.info.origin.position.y) / map_res_);
 			placement_spot = (y_placement) * map_to_publish_.info.width + x_placement;
 
-			// If the point checked is a new obstacle then set it to 99 on the map
-			if (points_checked_[i].obstacle == 1) {
-				map_to_publish_.data[placement_spot] = 99;
-				recent_obs_cells_.push_back(placement_spot);
-	        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
-			} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
-				map_to_publish_.data[placement_spot] = 0;
-	        // do the obstacle decay if the point has been detected as drivable or likely drivable in a previously scanned cell
-			} else if ( (points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2) ) {
+			// If the cell has been labeled as a recent obstacle then we will no longer process it for this cycle
+			if ( (std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
 
-				// If the cell has not been labled with an obstacle recently then and has been checked we will reduce the probability of an obstacle in that cell		
-				if ( !(std::find(recent_obs_cells_.begin(), recent_obs_cells_.end(), placement_spot) == recent_obs_cells_.end()) ) {
+				// If the point checked is a new obstacle then set it to 99 on the map
+				if (points_checked_[i].obstacle == 1) {
+					map_to_publish_.data[placement_spot] = 99;
+					recent_obs_cells_.push_back(placement_spot);
+		        // If the point checked is previously unknown and the point is labeled as drivable or likely drivable as an obstacle then it will be assigned as a ground point
+				} else if (map_to_publish_.data[placement_spot] <= 0 && ((points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2)) ) {
+					map_to_publish_.data[placement_spot] = 0;
+		        // do the obstacle decay if the point has been detected as drivable or likely drivable in a previously scanned cell
+				} else if ( (points_checked_[i].obstacle == 0)  || (points_checked_[i].obstacle == 2) ) {
+
+					// If the cell has not been labeled an obstacle this cycle and the current point is ground or likely drivable then decay obstacle probability
 					map_to_publish_.data[placement_spot] = map_to_publish_.data[placement_spot] * (1 - obs_decay_factor_);
 				}
 			}
